@@ -20,17 +20,18 @@ export function ResultScreen({ champion, tournamentName }: ResultScreenProps) {
   return (
     <Center py="xl" style={{ flex: 1 }}>
       <Stack align="center" gap="lg">
-        <IconTrophy size={64} color="#f59e0b" />
+        <IconTrophy size={48} color="#f59e0b" style={{ width: "clamp(40px, 10vw, 64px)", height: "clamp(40px, 10vw, 64px)" }} />
 
-        <Text fw={700} size="xl" c="#888">
+        <Text fw={700} size="xl" c="#888" ta="center">
           {tournamentName}
         </Text>
 
         <Text
           fw={900}
           size="xl"
+          ta="center"
           style={{
-            fontSize: 48,
+            fontSize: "clamp(24px, 10vw, 48px)",
             background: "linear-gradient(135deg, #8b5cf6, #ec4899)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
@@ -43,8 +44,8 @@ export function ResultScreen({ champion, tournamentName }: ResultScreenProps) {
         <Image
           src={champion.coverImage}
           alt={champion.title}
-          w={320}
-          h={400}
+          w="clamp(180px, 60vw, 320px)"
+          h="clamp(225px, 75vw, 400px)"
           fit="cover"
           radius="lg"
           style={{

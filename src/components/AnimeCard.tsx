@@ -1,64 +1,42 @@
 "use client"
 
 import { useCallback } from "react"
-import { Card, Image, Text, Group, Badge, ActionIcon } from "@mantine/core"
+import { Text, ActionIcon } from "@mantine/core"
 import { IconX } from "@tabler/icons-react"
 import type { Anime } from "@/src/lib/types"
 
 interface AnimeCardProps {
   anime: Anime
-  size?: "sm" | "md" | "lg"
   selected?: boolean
-  onSelect?: (anime: Anime) => void
+  onClick?: (anime: Anime) => void
   onRemove?: (anime: Anime) => void
+  className?: string
 }
 
 export function AnimeCard({
   anime,
-  size = "sm",
   selected = false,
-  onSelect,
+  onClick,
   onRemove,
+  className = "",
 }: AnimeCardProps) {
-  const imageHeight = { sm: 180, md: 220, lg: 400 }
-  const cardWidth = { sm: 180, md: 200, lg: 380 }
-
-  const genreColors: Record<string, string> = {
-    Action: "red",
-    Adventure: "orange",
-    Comedy: "yellow",
-    Drama: "violet",
-    Fantasy: "indigo",
-    Horror: "dark",
-    "Sci-Fi": "cyan",
-    Romance: "pink",
-    "Slice of Life": "teal",
-    Sports: "lime",
-    Mystery: "grape",
-    Psychological: "blue",
-    Supernatural: "grape",
-    Thriller: "gray",
-    Music: "pink",
-    Mecha: "red",
-    Seinen: "blue",
-    Shounen: "orange",
-  }
+  const interactive = !!onClick
 
   const handleClick = useCallback(() => {
-    onSelect?.(anime)
-  }, [anime, onSelect])
+    onClick?.(anime)
+  }, [anime, onClick])
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (onSelect && (e.key === "Enter" || e.key === " ")) {
+      if (onClick && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault()
-        onSelect(anime)
+        onClick(anime)
       }
     },
-    [anime, onSelect]
+    [anime, onClick]
   )
 
-  const handleRemoveClick = useCallback(
+  const handleRemove = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
       onRemove?.(anime)
@@ -66,87 +44,103 @@ export function AnimeCard({
     [anime, onRemove]
   )
 
-  const interactive = !!onSelect
-
   return (
-    <Card
-      shadow="md"
-      padding="xs"
-      radius="md"
-      w={cardWidth[size]}
-      bg="#1a1a1a"
+    <div
       tabIndex={interactive ? 0 : undefined}
       role={interactive ? "button" : undefined}
       aria-label={interactive ? `Selecionar ${anime.title}` : anime.title}
       onKeyDown={interactive ? handleKeyDown : undefined}
-      style={{
-        border: selected ? "2px solid #8b5cf6" : "2px solid transparent",
-        cursor: onSelect ? "pointer" : undefined,
-        transition: "transform 0.2s, border-color 0.2s",
-      }}
-      className="hover:scale-105"
       onClick={interactive ? handleClick : undefined}
+      className={`relative overflow-hidden rounded-xl cursor-${interactive ? "pointer" : "default"} transition-all duration-300 ${className}`}
+      style={{
+        aspectRatio: "3 / 4",
+        border: selected
+          ? "2px solid #8b5cf6"
+          : "1px solid rgba(255,255,255,0.1)",
+        boxShadow: selected
+          ? "0 0 20px rgba(139, 92, 246, 0.3)"
+          : "0 4px 12px rgba(0,0,0,0.3)",
+      }}
+      onMouseEnter={(e) => {
+        if (interactive) {
+          e.currentTarget.style.borderColor = "rgba(139, 92, 246, 0.5)"
+          e.currentTarget.style.boxShadow = "0 0 24px rgba(139, 92, 246, 0.2)"
+          e.currentTarget.style.transform = "scale(1.03)"
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (interactive) {
+          e.currentTarget.style.borderColor = selected
+            ? "#8b5cf6"
+            : "rgba(255,255,255,0.1)"
+          e.currentTarget.style.boxShadow = selected
+            ? "0 0 20px rgba(139, 92, 246, 0.3)"
+            : "0 4px 12px rgba(0,0,0,0.3)"
+          e.currentTarget.style.transform = "scale(1)"
+        }
+      }}
     >
-      <Card.Section>
-        <div style={{ position: "relative" }}>
-          <Image
-            src={anime.coverImage}
-            alt={anime.title}
-            w={cardWidth[size]}
-            h={imageHeight[size]}
-            fit="cover"
-            fallbackSrc="https://via.placeholder.com/160x200?text=No+Image"
-          />
-          {onRemove && (
-            <ActionIcon
-              variant="filled"
-              color="red"
-              size="sm"
-              radius="xl"
-              style={{
-                position: "absolute",
-                top: 6,
-                right: 6,
-              }}
-              onClick={handleRemoveClick}
-              aria-label={`Remover ${anime.title}`}
-            >
-              <IconX size={14} />
-            </ActionIcon>
-          )}
-        </div>
-      </Card.Section>
+      {/* Background image */}
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: `url(${anime.coverImage})` }}
+      />
 
-      <Text fw={600} size="sm" ta="center" lineClamp={2} mt={6} c="white">
-        {anime.title}
-      </Text>
+      {/* Fallback gradient if image fails */}
+      <div
+        className="absolute inset-0"
+        style={{ background: "linear-gradient(135deg, #1a1a1a, #2a2a2a)", zIndex: -1 }}
+      />
 
-      <Group gap={4} justify="center" mt={2}>
+      {/* Glass overlay at bottom */}
+      <div
+        className="absolute bottom-0 left-0 right-0"
+        style={{
+          background: "rgba(0, 0, 0, 0.4)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          borderTop: "1px solid rgba(255,255,255,0.1)",
+          padding: "8px 12px",
+        }}
+      >
+        <Text
+          fw={700}
+          size="sm"
+          c="white"
+          lineClamp={2}
+          style={{ textShadow: "0 2px 8px rgba(0,0,0,0.5)" }}
+        >
+          {anime.title}
+        </Text>
         {anime.averageScore && (
-          <Badge size="sm" variant="light" color="yellow" styles={{ label: { fontSize: 10 } }}>
-            {anime.averageScore}%
-          </Badge>
+          <Text size="xs" c="rgba(255,255,255,0.7)" mt={2}>
+            ★ {anime.averageScore}%
+          </Text>
         )}
-        {anime.format && (
-          <Badge size="sm" variant="light" color="gray" styles={{ label: { fontSize: 10 } }}>
-            {anime.format}
-          </Badge>
-        )}
-      </Group>
+      </div>
 
-      <Group gap={4} justify="center" mt={4}>
-        {anime.genres.slice(0, 3).map((genre) => (
-          <Badge
-            key={genre}
-            size="xs"
-            variant="light"
-            color={genreColors[genre] || "gray"}
-            styles={{ label: { fontSize: 9 } }}
-          >
-            {genre}
-          </Badge>
-        ))}
-      </Group>
-    </Card>
+      {/* Remove button */}
+      {onRemove && (
+        <ActionIcon
+          variant="filled"
+          color="red"
+          size="sm"
+          radius="xl"
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            background: "rgba(0,0,0,0.5)",
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
+            border: "1px solid rgba(255,255,255,0.1)",
+          }}
+          onClick={handleRemove}
+          aria-label={`Remover ${anime.title}`}
+        >
+          <IconX size={14} />
+        </ActionIcon>
+      )}
+    </div>
   )
 }

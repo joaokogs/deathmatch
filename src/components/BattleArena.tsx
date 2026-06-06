@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Stack, Text, Group, Modal, Button } from "@mantine/core"
+import { Stack, Text, Group, Modal, Button, Box } from "@mantine/core"
 import { AnimeCard } from "./AnimeCard"
 import type { Anime, Battle } from "@/src/lib/types"
 
@@ -49,18 +49,19 @@ export function BattleArena({
           Clique no anime que você quer passar para a próxima rodada
         </Text>
 
-        <Group gap={48} justify="center" wrap="nowrap">
-          <AnimeCard
-            anime={battle.anime1}
-            size="lg"
-            onSelect={handleClick}
-          />
+        <Group gap="md" className="sm:gap-12" justify="center" wrap="wrap">
+          <Box style={{ width: "clamp(140px, 30vw, 280px)" }}>
+            <AnimeCard
+              anime={battle.anime1}
+              onClick={handleClick}
+            />
+          </Box>
 
           <Text
             fw={900}
             size="xl"
             style={{
-              fontSize: 48,
+              fontSize: "clamp(24px, 8vw, 48px)",
               background: "linear-gradient(135deg, #8b5cf6, #ec4899)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
@@ -70,11 +71,12 @@ export function BattleArena({
             VS
           </Text>
 
-          <AnimeCard
-            anime={battle.anime2}
-            size="lg"
-            onSelect={handleClick}
-          />
+          <Box style={{ width: "clamp(140px, 30vw, 280px)" }}>
+            <AnimeCard
+              anime={battle.anime2}
+              onClick={handleClick}
+            />
+          </Box>
         </Group>
       </Stack>
 

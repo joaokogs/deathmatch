@@ -188,9 +188,8 @@ export function AnimeSearch({
                 <AnimeCard
                   key={anime.id}
                   anime={anime}
-                  size="sm"
                   selected={isSelected}
-                  onSelect={isSelected ? undefined : canSelect ? onSelect : undefined}
+                  onClick={isSelected ? undefined : canSelect ? onSelect : undefined}
                 />
               )
             })}

@@ -48,14 +48,15 @@ function NovoContent() {
   }
 
   return (
-    <Container size="xl" py="xl">
+    <Container size="xl" py="xl" className="max-sm:!py-4">
       <Stack gap="xl">
         <div>
           <Text
             fw={900}
             size="xl"
+            ta="center"
             style={{
-              fontSize: 32,
+              fontSize: "clamp(22px, 8vw, 32px)",
               background: "linear-gradient(135deg, #8b5cf6, #ec4899)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",

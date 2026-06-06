@@ -151,7 +151,7 @@ export const useTournamentStore = create<TournamentState>()(
       },
     }),
     {
-      name: "anime-battle-storage",
+      name: "deathmatch-storage",
     }
   )
 )

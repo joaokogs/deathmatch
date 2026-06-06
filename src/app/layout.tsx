@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Anime Battle",
-  description: "Crie seu torneio de animes e descubra o campeão!",
+  title: "Deathmatch",
+  description: "Crie seu torneio de animes e descubra quem é o campeão!",
 }
 
 export default function RootLayout({

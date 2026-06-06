@@ -86,7 +86,7 @@ export default function BattlePage() {
           </Box>
 
         <Box style={{ flex: 1 }}>
-          <Group justify="space-between" p="md" style={{ borderBottom: "1px solid #2a2a2a" }}>
+          <Group justify="space-between" p="md" className="max-sm:!p-2" style={{ borderBottom: "1px solid #2a2a2a" }}>
             <Group gap="sm">
                 <ActionIcon
                   variant="subtle"

@@ -51,7 +51,6 @@ export function SelectedList({
             <AnimeCard
               key={anime.id}
               anime={anime}
-              size="sm"
               selected
               onRemove={onRemove}
             />

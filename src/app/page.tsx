@@ -19,25 +19,26 @@ export default function HomePage() {
   }
 
   return (
-    <Center mih="100vh" p="md">
+    <Center mih="100dvh" px="sm">
       <Stack align="center" gap="lg" maw={500} w="100%">
-        <IconSwords size={64} color="#8b5cf6" />
+        <IconSwords size={64} color="#8b5cf6" style={{ width: "clamp(40px, 15vw, 64px)", height: "clamp(40px, 15vw, 64px)" }} />
 
         <Title
           order={1}
+          ta="center"
           style={{
-            fontSize: 48,
+            fontSize: "clamp(28px, 10vw, 48px)",
             background: "linear-gradient(135deg, #8b5cf6, #ec4899)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
             backgroundClip: "text",
           }}
         >
-          Anime Battle
+          Deathmatch
         </Title>
 
         <Text size="lg" c="#888" ta="center">
-          Crie seu torneio de animes e descubra quem é o campeão!
+          Monte seu pool de animes, enfrente seus amigos e descubra quem é o campeão!
         </Text>
 
         <Divider w="100%" label="Modo Solo" labelPosition="center" c="#555" />

@@ -5,9 +5,10 @@ import { useParams, useRouter } from "next/navigation"
 import {
   Stack, Text, Button, Group, Badge, Center, Loader,
   Card, Image, Box, SimpleGrid, Avatar, Progress, TextInput,
-  ActionIcon, Paper,
+  ActionIcon, Paper, Drawer,
 } from "@mantine/core"
-import { IconCopy, IconArrowLeft, IconX, IconSearch, IconChevronLeft, IconChevronRight, IconUsers } from "@tabler/icons-react"
+import { useDisclosure } from "@mantine/hooks"
+import { IconCopy, IconArrowLeft, IconX, IconSearch, IconChevronLeft, IconChevronRight, IconUsers, IconLayoutSidebar } from "@tabler/icons-react"
 import { fetchAnimes } from "@/src/lib/anilist"
 import { GenreTags } from "@/src/components/GenreTags"
 import type { Room, Anime, SearchResult } from "@/src/lib/types"
@@ -27,8 +28,7 @@ export default function SalaPage() {
   const [joinError, setJoinError] = useState<string | null>(null)
   const [votedAnime, setVotedAnime] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
-
-
+  const [sidebarOpened, { toggle: toggleSidebar, close: closeSidebar }] = useDisclosure(true)
 
   // Busca de animes
   const [query, setQuery] = useState("")
@@ -255,7 +255,7 @@ export default function SalaPage() {
     return <Center mih="100vh" p="md"><Stack align="center" gap="lg" maw={400} w="100%">
       <Avatar size="xl" color="grape"><IconUsers size={32} /></Avatar>
       <Text fw={700} size="xl" c="white">Entrar na Sala</Text>
-      <Text c="#888" size="sm" ta="center">Você foi convidado para uma partida de Anime Battle!</Text>
+      <Text c="#888" size="sm" ta="center">Você foi convidado para uma partida de Deathmatch!</Text>
       <TextInput placeholder="Seu nickname" value={nickname} onChange={(e) => setNickname(e.currentTarget.value)}
         size="lg" radius="md" w="100%"
         styles={{ input: { backgroundColor: "#141414", border: "1px solid #2a2a2a", color: "white" } }} />
@@ -291,33 +291,74 @@ export default function SalaPage() {
     const totalVotes = currentBattle ? (room.votes[currentBattle.id]?.length || 0) : 0
     const roundLabel = ["Rodada 1", "Rodada 2", "Semifinal", "Final"][room.currentRound] || "Final"
 
-    return <Box style={{ display: "flex", height: "100vh" }}>
-      {/* Sidebar na votação */}
-      <Paper w={280} bg="#121212" style={{ borderRight: "1px solid #2a2a2a", display: "flex", flexDirection: "column" }}>
-        <Stack p="md" gap="sm" style={{ flex: 1 }}>
-          <Text fw={700} size="sm" c="white">{room.name}</Text>
-          <Badge size="sm" color="grape">{room.id}</Badge>
-          <Text size="xs" c="#888" mt="sm">Jogadores</Text>
-          <Stack gap={4}>
-            {room.players.map((p) => (
-              <Group key={p.id} gap={6} p={4} style={{ borderRadius: 6, backgroundColor: "#1a1a1a" }}>
-                <Avatar size="sm" color={p.isHost ? "grape" : "blue"} radius="xl">{p.nickname[0].toUpperCase()}</Avatar>
-                <Text size="sm" c="white">{p.nickname}</Text>
-                {p.isHost && <Badge size="xs" color="grape" variant="light">Host</Badge>}
-              </Group>
-            ))}
-          </Stack>
+    const votingSidebarContent = (
+      <Stack p="md" gap="sm" style={{ flex: 1 }}>
+        <Text fw={700} size="sm" c="white">{room.name}</Text>
+        <Badge size="sm" color="grape">{room.id}</Badge>
+        <Text size="xs" c="#888" mt="sm">Jogadores</Text>
+        <Stack gap={4}>
+          {room.players.map((p) => (
+            <Group key={p.id} gap={6} p={4} style={{ borderRadius: 6, backgroundColor: "#1a1a1a" }}>
+              <Avatar size="sm" color={p.isHost ? "grape" : "blue"} radius="xl">{p.nickname[0].toUpperCase()}</Avatar>
+              <Text size="sm" c="white">{p.nickname}</Text>
+              {p.isHost && <Badge size="xs" color="grape" variant="light">Host</Badge>}
+            </Group>
+          ))}
         </Stack>
+      </Stack>
+    )
+
+    return <Box style={{ display: "flex", height: "100vh" }}>
+      {/* Sidebar desktop */}
+      <Paper
+        visibleFrom="md"
+        w={sidebarOpened ? 280 : 0}
+        bg="#121212"
+        style={{
+          borderRight: sidebarOpened ? "1px solid #2a2a2a" : "none",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          transition: "width 0.3s ease, border-color 0.3s ease",
+        }}
+      >
+        <Box style={{ opacity: sidebarOpened ? 1 : 0, transition: "opacity 0.2s ease", flex: 1, minWidth: 280 }}>
+          {votingSidebarContent}
+        </Box>
       </Paper>
+
+      {/* Sidebar mobile drawer */}
+      <Drawer
+        hiddenFrom="md"
+        opened={sidebarOpened || false}
+        onClose={closeSidebar}
+        size="100%"
+        position="left"
+        styles={{
+          content: { backgroundColor: "#121212" },
+          header: { backgroundColor: "#121212" },
+          title: { color: "white" },
+        }}
+      >
+        {votingSidebarContent}
+      </Drawer>
 
       {/* Conteúdo */}
       <Box style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} p="md">
-        <Stack gap="lg" align="center" style={{ maxWidth: 900 }}>
+        <Group gap="xs" style={{ position: "absolute", top: 16, left: 16 }}>
+          <ActionIcon variant="subtle" color="gray" hiddenFrom="md" onClick={toggleSidebar} aria-label="Abrir sidebar">
+            <IconLayoutSidebar size={20} />
+          </ActionIcon>
+          <ActionIcon variant="subtle" color="gray" visibleFrom="md" onClick={toggleSidebar} aria-label={sidebarOpened ? "Fechar sidebar" : "Abrir sidebar"}>
+            {sidebarOpened ? <IconChevronLeft size={18} /> : <IconChevronRight size={18} />}
+          </ActionIcon>
+        </Group>
+        <Stack gap="lg" align="center" style={{ maxWidth: 900, width: "100%" }}>
           <Group justify="space-between" w="100%">
             <Text fw={700} c="white" size="lg">{room.name}</Text>
             <Badge size="lg" variant="gradient" gradient={{ from: "grape", to: "pink" }}>{roundLabel}</Badge>
           </Group>
-          <Group gap={8} justify="center">
+          <Group gap={8} justify="center" wrap="wrap">
             {room.players.map((p) => {
               const hv = currentBattle ? room.votes[currentBattle.id]?.some((v) => v.playerId === p.id) : false
               return <Box key={p.id} ta="center" style={{ opacity: hv ? 1 : 0.5 }}>
@@ -328,15 +369,16 @@ export default function SalaPage() {
           </Group>
           <Progress value={room.players.length > 0 ? (totalVotes / room.players.length) * 100 : 0} color="grape" size="sm" w="100%" maw={400} />
           <Text size="sm" c="#888">{totalVotes} de {room.players.length} votaram{votedAnime ? " — Aguardando..." : " — Clique no seu favorito!"}</Text>
-          {currentBattle && <Group gap={48} justify="center" wrap="nowrap">
+          {currentBattle && <Group gap="md" className="sm:gap-12" justify="center" wrap="wrap">
             {[currentBattle.anime1, currentBattle.anime2].map((a) => (
               <Card key={a.id} shadow="md" padding={0} radius="md" style={{
                 cursor: votedAnime ? "default" : "pointer",
+                width: "clamp(140px, 35vw, 280px)",
                 border: votedAnime === a.id ? "3px solid #8b5cf6" : "3px solid transparent",
                 opacity: votedAnime && votedAnime !== a.id ? 0.4 : 1,
                 transition: "all 0.3s",
               }} onClick={() => handleVote(a.id)}>
-                <Image src={a.coverImage} alt={a.title} w={280} h={350} fit="cover"
+                <Image src={a.coverImage} alt={a.title} w="100%" h="clamp(175px, 45vw, 350px)" fit="cover"
                   fallbackSrc="https://via.placeholder.com/280x350?text=No+Image" />
                 <Text fw={600} ta="center" p="xs" c="white" truncate>{a.title}</Text>
               </Card>
@@ -351,41 +393,82 @@ export default function SalaPage() {
   const animes = result?.animes || []
   const pageInfo = result?.pageInfo
 
+  const lobbySidebarContent = (
+    <Stack p="md" gap="sm" style={{ flex: 1, overflow: "hidden" }}>
+      <Group justify="space-between">
+        <Text fw={700} size="sm" c="white">{room.name}</Text>
+        <Button size="xs" variant="subtle" color="gray" onClick={handleLeave}>
+          <IconArrowLeft size={16} />
+        </Button>
+      </Group>
+      <Group gap={4}>
+        <Badge size="sm" color="grape">{room.id}</Badge>
+        <Button size="xs" variant="subtle" color="gray" leftSection={<IconCopy size={12} />}
+          onClick={handleCopyLink}>{copied ? "OK" : "Link"}</Button>
+      </Group>
+
+      <Text size="xs" c="#888" mt="sm">Jogadores ({room.players.length})</Text>
+      <Stack gap={4}>
+        {room.players.map((p) => (
+          <Group key={p.id} gap={6} p={4} style={{ borderRadius: 6, backgroundColor: "#1a1a1a" }}>
+            <Avatar size="sm" color={p.isHost ? "grape" : "blue"} radius="xl">{p.nickname[0].toUpperCase()}</Avatar>
+            <Text size="sm" c="white">{p.nickname}</Text>
+            {p.isHost && <Badge size="xs" color="grape" variant="light">Host</Badge>}
+          </Group>
+        ))}
+      </Stack>
+    </Stack>
+  )
+
   return (
     <Box style={{ display: "flex", height: "100vh" }}>
-      {/* SIDEBAR */}
-      <Paper w={300} bg="#121212" style={{ borderRight: "1px solid #2a2a2a", display: "flex", flexDirection: "column" }}>
-        <Stack p="md" gap="sm" style={{ flex: 1, overflow: "hidden" }}>
-          <Group justify="space-between">
-            <Text fw={700} size="sm" c="white">{room.name}</Text>
-            <Button size="xs" variant="subtle" color="gray" onClick={handleLeave}>
-              <IconArrowLeft size={16} />
-            </Button>
-          </Group>
-          <Group gap={4}>
-            <Badge size="sm" color="grape">{room.id}</Badge>
-            <Button size="xs" variant="subtle" color="gray" leftSection={<IconCopy size={12} />}
-              onClick={handleCopyLink}>{copied ? "OK" : "Link"}</Button>
-          </Group>
-
-          <Text size="xs" c="#888" mt="sm">Jogadores ({room.players.length})</Text>
-          <Stack gap={4}>
-            {room.players.map((p) => (
-              <Group key={p.id} gap={6} p={4} style={{ borderRadius: 6, backgroundColor: "#1a1a1a" }}>
-                <Avatar size="sm" color={p.isHost ? "grape" : "blue"} radius="xl">{p.nickname[0].toUpperCase()}</Avatar>
-                <Text size="sm" c="white">{p.nickname}</Text>
-                {p.isHost && <Badge size="xs" color="grape" variant="light">Host</Badge>}
-              </Group>
-            ))}
-          </Stack>
-
-
-        </Stack>
+      {/* Sidebar desktop */}
+      <Paper
+        visibleFrom="md"
+        w={sidebarOpened ? 300 : 0}
+        bg="#121212"
+        style={{
+          borderRight: sidebarOpened ? "1px solid #2a2a2a" : "none",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          transition: "width 0.3s ease, border-color 0.3s ease",
+        }}
+      >
+        <Box style={{ opacity: sidebarOpened ? 1 : 0, transition: "opacity 0.2s ease", flex: 1, minWidth: 300 }}>
+          {lobbySidebarContent}
+        </Box>
       </Paper>
+
+      {/* Sidebar mobile drawer */}
+      <Drawer
+        hiddenFrom="md"
+        opened={sidebarOpened || false}
+        onClose={closeSidebar}
+        size="100%"
+        position="left"
+        styles={{
+          content: { backgroundColor: "#121212" },
+          header: { backgroundColor: "#121212" },
+          title: { color: "white" },
+        }}
+      >
+        {lobbySidebarContent}
+      </Drawer>
 
       {/* CONTEÚDO PRINCIPAL */}
       <Box style={{ flex: 1, overflow: "auto" }} p="md">
         <Stack gap="md" style={{ maxWidth: 1100, margin: "0 auto" }}>
+          {/* Toggle sidebar button */}
+          <Group gap="xs">
+            <ActionIcon variant="subtle" color="gray" hiddenFrom="md" onClick={toggleSidebar} aria-label="Abrir sidebar">
+              <IconLayoutSidebar size={20} />
+            </ActionIcon>
+            <ActionIcon variant="subtle" color="gray" visibleFrom="md" onClick={toggleSidebar} aria-label={sidebarOpened ? "Fechar sidebar" : "Abrir sidebar"}>
+              {sidebarOpened ? <IconChevronLeft size={18} /> : <IconChevronRight size={18} />}
+            </ActionIcon>
+          </Group>
+
           {/* Pool */}
           <Group justify="space-between">
             <Text fw={600} c="white">Pool ({poolCount}/{MAX_POOL})</Text>
@@ -397,25 +480,127 @@ export default function SalaPage() {
             </Group>
           </Group>
 
-          <Box style={{ overflowX: "auto" }}>
-            <Group gap="sm" wrap="nowrap" style={{ minHeight: 170 }}>
+          <Box
+            style={{
+              overflowX: "auto",
+              scrollbarWidth: "thin",
+              scrollbarColor: "#2a2a2a transparent",
+            }}
+          >
+            <Group gap="sm" wrap="nowrap" style={{ minHeight: 170, paddingBottom: 4 }}>
               {room.pool.length === 0 ? (
-                <Text c="dimmed" size="sm" py="md">Nenhum anime ainda. Busque abaixo e clique para adicionar!</Text>
-              ) : room.pool.map((a) => (
-                <Card key={a.id} p={4} radius="md" bg="#1a1a1a" style={{ minWidth: 120, border: "1px solid #2a2a2a" }}>
-                  <Card.Section>
-                    <Box style={{ position: "relative" }}>
-                      <Image src={a.coverImage} alt={a.title} w={120} h={150} fit="cover"
-                        fallbackSrc="https://via.placeholder.com/120x150?text=No+Image" />
-                      <ActionIcon variant="filled" color="red" size="xs" radius="xl"
-                        style={{ position: "absolute", top: 4, right: 4 }} onClick={() => handleRemoveAnime(a.id)}>
-                        <IconX size={12} />
-                      </ActionIcon>
-                    </Box>
-                  </Card.Section>
-                  <Text size="xs" ta="center" lineClamp={1} mt={2} c="white">{a.title}</Text>
-                  <Text size="xs" ta="center" c="dimmed">+{a.addedByName}</Text>
-                </Card>
+                <div
+                  style={{
+                    minWidth: "100%",
+                    minHeight: 160,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderRadius: 12,
+                    border: "1px dashed rgba(255,255,255,0.15)",
+                    background: "rgba(255,255,255,0.02)",
+                  }}
+                >
+                  <Text c="rgba(255,255,255,0.35)" size="sm">
+                    Nenhum anime ainda. Busque abaixo e clique para adicionar!
+                  </Text>
+                </div>
+              ) : room.pool.map((a, idx) => (
+                <div
+                  key={a.id}
+                  className="group relative overflow-hidden rounded-xl flex-shrink-0 transition-all duration-300 hover:scale-105"
+                  style={{
+                    width: 120,
+                    aspectRatio: "2/3",
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                  }}
+                >
+                  {/* Cover background */}
+                  <div
+                    className="absolute inset-0 bg-cover bg-center"
+                    style={{ backgroundImage: `url(${a.coverImage})` }}
+                  />
+
+                  {/* Gradient overlay */}
+                  <div
+                    className="absolute inset-0"
+                    style={{ background: "linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.85))" }}
+                  />
+
+                  {/* Index badge */}
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      left: 6,
+                      width: 22,
+                      height: 22,
+                      borderRadius: "50%",
+                      background: "rgba(139, 92, 246, 0.8)",
+                      backdropFilter: "blur(4px)",
+                      WebkitBackdropFilter: "blur(4px)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                    }}
+                  >
+                    <Text size="xs" fw={700} c="white" style={{ fontSize: 11 }}>{idx + 1}</Text>
+                  </div>
+
+                  {/* Remove button */}
+                  <ActionIcon
+                    variant="filled"
+                    color="red"
+                    size="xs"
+                    radius="xl"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 6,
+                      background: "rgba(0,0,0,0.5)",
+                      backdropFilter: "blur(4px)",
+                      WebkitBackdropFilter: "blur(4px)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                    }}
+                    onClick={() => handleRemoveAnime(a.id)}
+                    aria-label={`Remover ${a.title}`}
+                  >
+                    <IconX size={12} />
+                  </ActionIcon>
+
+                  {/* Info overlay at bottom */}
+                  <div
+                    className="absolute bottom-0 left-0 right-0"
+                    style={{
+                      padding: "6px 8px",
+                      background: "rgba(0,0,0,0.4)",
+                      backdropFilter: "blur(8px)",
+                      WebkitBackdropFilter: "blur(8px)",
+                      borderTop: "1px solid rgba(255,255,255,0.08)",
+                    }}
+                  >
+                    <Text
+                      size="xs"
+                      fw={600}
+                      c="white"
+                      truncate
+                      style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)", fontSize: 11 }}
+                    >
+                      {a.title}
+                    </Text>
+                    <Text
+                      size="xs"
+                      c="rgba(255,255,255,0.5)"
+                      truncate
+                      style={{ fontSize: 10, marginTop: 1 }}
+                    >
+                      +{a.addedByName}
+                    </Text>
+                  </div>
+                </div>
               ))}
             </Group>
           </Box>

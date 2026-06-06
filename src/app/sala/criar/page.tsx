@@ -50,13 +50,14 @@ export default function CriarSalaPage() {
   }
 
   return (
-    <Center mih="100vh" p="md">
+    <Center mih="100dvh" px="sm">
       <Stack align="center" gap="lg" maw={450} w="100%">
-        <IconUsers size={48} color="#8b5cf6" />
+        <IconUsers size={48} color="#8b5cf6" style={{ width: "clamp(32px, 12vw, 48px)", height: "clamp(32px, 12vw, 48px)" }} />
         <Text
           fw={900}
+          ta="center"
           style={{
-            fontSize: 32,
+            fontSize: "clamp(22px, 8vw, 32px)",
             background: "linear-gradient(135deg, #8b5cf6, #ec4899)",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
