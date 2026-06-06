@@ -43,14 +43,62 @@ export default function SalaPage() {
 
   const pollRef = useRef<ReturnType<typeof setInterval>>(null)
 
-  // Player ID
+  // Player ID + Auto-reconnect
   useEffect(() => {
-    const saved = sessionStorage.getItem("anime-battle-player-id")
-    const savedRoom = sessionStorage.getItem("anime-battle-room-id")
-    if (saved && savedRoom === roomId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPlayerId(saved)
+    let cancelled = false
+
+    const tryReconnect = async () => {
+      const savedPlayerId = localStorage.getItem("anime-battle-player-id")
+      const savedRoomId = localStorage.getItem("anime-battle-room-id")
+      const savedNickname = localStorage.getItem("anime-battle-nickname")
+
+      // Sem dados salvos → mostra tela de join
+      if (!savedPlayerId || !savedRoomId) return
+
+      // roomId salvo não bate com a sala atual → dados stale, limpar
+      if (savedRoomId !== roomId) {
+        localStorage.removeItem("anime-battle-player-id")
+        localStorage.removeItem("anime-battle-room-id")
+        localStorage.removeItem("anime-battle-nickname")
+        return
+      }
+
+      // roomId bate → tenta reconectar via API
+      try {
+        const res = await fetch(`/api/rooms/${roomId}/reconnect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ playerId: savedPlayerId }),
+        })
+
+        if (!res.ok) {
+          // Player não é mais válido (sala expirou, removido, etc.)
+          localStorage.removeItem("anime-battle-player-id")
+          localStorage.removeItem("anime-battle-room-id")
+          localStorage.removeItem("anime-battle-nickname")
+          return
+        }
+
+        if (!cancelled) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setPlayerId(savedPlayerId)
+          if (savedNickname) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setNickname(savedNickname)
+          }
+        }
+      } catch {
+        // Erro de rede → limpa dados para forçar re-join
+        if (!cancelled) {
+          localStorage.removeItem("anime-battle-player-id")
+          localStorage.removeItem("anime-battle-room-id")
+          localStorage.removeItem("anime-battle-nickname")
+        }
+      }
     }
+
+    tryReconnect()
+    return () => { cancelled = true }
   }, [roomId])
 
   // Polling da sala
@@ -133,8 +181,9 @@ export default function SalaPage() {
       const data = await res.json()
       if (!res.ok) { setJoinError(data.error); return }
       setPlayerId(data.playerId)
-      sessionStorage.setItem("anime-battle-player-id", data.playerId)
-      sessionStorage.setItem("anime-battle-room-id", roomId)
+      localStorage.setItem("anime-battle-player-id", data.playerId)
+      localStorage.setItem("anime-battle-room-id", roomId)
+      localStorage.setItem("anime-battle-nickname", nickname.trim())
       setRoom(data.room)
     } catch { setJoinError("Erro de conexão") }
     finally { setJoining(false) }
@@ -186,8 +235,9 @@ export default function SalaPage() {
   }
 
   const handleLeave = () => {
-    sessionStorage.removeItem("anime-battle-player-id")
-    sessionStorage.removeItem("anime-battle-room-id")
+    localStorage.removeItem("anime-battle-player-id")
+    localStorage.removeItem("anime-battle-room-id")
+    localStorage.removeItem("anime-battle-nickname")
     if (pollRef.current) clearInterval(pollRef.current)
     router.push("/")
   }

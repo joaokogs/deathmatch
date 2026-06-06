@@ -269,6 +269,22 @@ export async function voteAnime(
   return {}
 }
 
+export async function reconnectToRoom(
+  roomId: string,
+  playerId: string
+): Promise<{ room: Room; nickname: string } | { error: string }> {
+  const redis = getRedis()
+  const room = await getRoom(roomId)
+
+  if (!room) return { error: "Sala não encontrada" }
+  if (room.status === "finished") return { error: "Sala encerrada" }
+
+  const player = room.players.find((p) => p.id === playerId)
+  if (!player) return { error: "Jogador não encontrado na sala" }
+
+  return { room, nickname: player.nickname }
+}
+
 export async function sendMessage(
   roomId: string,
   playerId: string,

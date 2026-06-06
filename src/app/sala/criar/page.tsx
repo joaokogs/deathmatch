@@ -38,8 +38,9 @@ export default function CriarSalaPage() {
       const data = await res.json()
       if (!res.ok) { setError(data.error || "Erro ao criar sala"); return }
 
-      sessionStorage.setItem("anime-battle-player-id", data.hostId)
-      sessionStorage.setItem("anime-battle-room-id", data.room.id)
+      localStorage.setItem("anime-battle-player-id", data.hostId)
+      localStorage.setItem("anime-battle-room-id", data.room.id)
+      localStorage.setItem("anime-battle-nickname", nickname.trim())
       router.push(`/sala/${data.room.id}`)
     } catch {
       setError("Erro de conexão")
