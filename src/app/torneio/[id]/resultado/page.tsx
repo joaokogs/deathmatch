@@ -43,6 +43,8 @@ export default function ResultadoPage() {
     <ResultScreen
       champion={tournament.champion}
       tournamentName={tournament.name}
+      bracket={tournament.bracket}
+      allAnimes={tournament.animes}
     />
   )
 }

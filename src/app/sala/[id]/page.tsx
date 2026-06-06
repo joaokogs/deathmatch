@@ -5,12 +5,13 @@ import { useParams, useRouter } from "next/navigation"
 import {
   Stack, Text, Button, Group, Badge, Center, Loader,
   Card, Image, Box, SimpleGrid, Avatar, Progress, TextInput,
-  ActionIcon, Paper, Drawer,
+  ActionIcon, Paper, Drawer, Modal,
 } from "@mantine/core"
 import { useDisclosure } from "@mantine/hooks"
-import { IconCopy, IconArrowLeft, IconX, IconSearch, IconChevronLeft, IconChevronRight, IconUsers, IconLayoutSidebar } from "@tabler/icons-react"
+import { IconCopy, IconArrowLeft, IconX, IconSearch, IconChevronLeft, IconChevronRight, IconUsers, IconLayoutSidebar, IconList, IconCrown } from "@tabler/icons-react"
 import { fetchAnimes } from "@/src/lib/anilist"
 import { GenreTags } from "@/src/components/GenreTags"
+import { computeRanking } from "@/src/lib/ranking"
 import type { Room, Anime, SearchResult } from "@/src/lib/types"
 
 const MAX_POOL = 16
@@ -28,6 +29,7 @@ export default function SalaPage() {
   const [joinError, setJoinError] = useState<string | null>(null)
   const [votedAnime, setVotedAnime] = useState<number | null>(null)
   const [copied, setCopied] = useState(false)
+  const [rankingOpen, setRankingOpen] = useState(false)
   const [sidebarOpened, { toggle: toggleSidebar, close: closeSidebar }] = useDisclosure(true)
 
   // Busca de animes
@@ -276,13 +278,74 @@ export default function SalaPage() {
 
   // ====== RESULTADO ======
   if (room.status === "finished" && room.champion) {
-    return <Center mih="100vh" p="md"><Stack align="center" gap="lg">
-      <Text fw={900} style={{ fontSize: 48, background: "linear-gradient(135deg, #8b5cf6, #ec4899)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>CAMPEÃO</Text>
-      <Image src={room.champion.coverImage} alt={room.champion.title} w={320} h={400} fit="cover" radius="lg"
-        fallbackSrc="https://via.placeholder.com/320x400?text=No+Image" />
-      <Text fw={700} size="xl" c="white">{room.champion.title}</Text>
-      <Button variant="outline" color="grape" size="lg" radius="md" onClick={handleLeave}>Voltar ao Início</Button>
-    </Stack></Center>
+    const ranking = computeRanking(room.bracket, room.champion, room.pool)
+
+    return (
+      <>
+        <Center mih="100vh" p="md">
+          <Stack align="center" gap="lg">
+            <Text fw={900} style={{ fontSize: 48, background: "linear-gradient(135deg, #8b5cf6, #ec4899)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>CAMPEÃO</Text>
+            <Image src={room.champion.coverImage} alt={room.champion.title} w={320} h={400} fit="cover" radius="lg"
+              fallbackSrc="https://via.placeholder.com/320x400?text=No+Image" />
+            <Text fw={700} size="xl" c="white">{room.champion.title}</Text>
+            <Group gap="md" w="100%" maw={400}>
+              <Button variant="outline" color="grape" size="md" radius="md" fullWidth
+                onClick={() => setRankingOpen(true)} leftSection={<IconList size={18} />}>
+                Ver Ranking Completo
+              </Button>
+              <Button variant="outline" color="gray" size="md" radius="md" fullWidth onClick={handleLeave}>
+                Voltar ao Início
+              </Button>
+            </Group>
+          </Stack>
+        </Center>
+
+        <Modal
+          opened={rankingOpen}
+          onClose={() => setRankingOpen(false)}
+          title="Ranking Final"
+          size="sm"
+          centered
+          styles={{
+            content: { backgroundColor: "#141414", border: "1px solid #2a2a2a" },
+            header: { backgroundColor: "#141414" },
+            title: { color: "white", fontWeight: 700 },
+            body: { padding: 0 },
+          }}
+        >
+          <Stack gap={0}>
+            {ranking.map((entry, idx) => (
+              <Box
+                key={entry.anime.id}
+                p="sm"
+                style={{
+                  borderBottom: idx < ranking.length - 1 ? "1px solid #2a2a2a" : "none",
+                  background: entry.isChampion ? "rgba(139, 92, 246, 0.1)" : "transparent",
+                }}
+              >
+                <Group gap="sm" wrap="nowrap">
+                  <Box ta="center" style={{ minWidth: 44 }}>
+                    {entry.isChampion ? (
+                      <IconCrown size={22} color="#f59e0b" />
+                    ) : (
+                      <Text fw={700} size="lg" c="#666">{entry.position}</Text>
+                    )}
+                  </Box>
+                  <Avatar src={entry.anime.coverImage} alt={entry.anime.title} size="md" radius="sm" style={{ minWidth: 40 }} />
+                  <Box style={{ flex: 1, minWidth: 0 }}>
+                    <Text fw={600} size="sm" c="white" truncate>{entry.anime.title}</Text>
+                    <Text size="xs" c={entry.isChampion ? "grape" : "#666"}>{entry.label}</Text>
+                  </Box>
+                  {entry.anime.averageScore && (
+                    <Text size="xs" c="#888" style={{ whiteSpace: "nowrap" }}>★ {entry.anime.averageScore}%</Text>
+                  )}
+                </Group>
+              </Box>
+            ))}
+          </Stack>
+        </Modal>
+      </>
+    )
   }
 
   // ====== VOTAÇÃO ======

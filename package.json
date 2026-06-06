@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "^18.0.1",
     "@mantine/core": "^9.3.0",
     "@mantine/hooks": "^9.3.0",
     "@tabler/icons-react": "^3.44.0",

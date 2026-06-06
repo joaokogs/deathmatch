@@ -1,22 +1,13 @@
 "use client"
 
-import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Stack, Text, TextInput, Button, Center, Title, Divider } from "@mantine/core"
-import { IconSwords, IconUsers } from "@tabler/icons-react"
+import {
+  Stack, Text, Button, Center, Title, Divider, Group, Box,
+} from "@mantine/core"
+import { IconSwords, IconUsers, IconList, IconTrophy } from "@tabler/icons-react"
 
 export default function HomePage() {
-  const [name, setName] = useState("")
   const router = useRouter()
-
-  const handleSolo = () => {
-    if (!name.trim()) return
-    router.push(`/torneio/novo?name=${encodeURIComponent(name.trim())}`)
-  }
-
-  const handleMultiplayer = () => {
-    router.push("/sala/criar")
-  }
 
   return (
     <Center mih="100dvh" px="sm">
@@ -38,62 +29,66 @@ export default function HomePage() {
         </Title>
 
         <Text size="lg" c="#888" ta="center">
-          Monte seu pool de animes, enfrente seus amigos e descubra quem é o campeão!
+          Escolha um modo de jogo!
         </Text>
 
         <Divider w="100%" label="Modo Solo" labelPosition="center" c="#555" />
 
-        <TextInput
-          placeholder="Nome da Disputa"
-          value={name}
-          onChange={(e) => setName(e.currentTarget.value)}
-          size="lg"
-          radius="md"
-          w="100%"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleSolo()
-          }}
-          styles={{
-            input: {
-              backgroundColor: "#141414",
-              border: "1px solid #2a2a2a",
-              color: "white",
-              textAlign: "center",
-            },
-          }}
-        />
-
-        <Button
-          size="lg"
-          radius="md"
-          fullWidth
-          disabled={!name.trim()}
-          onClick={handleSolo}
-          leftSection={<IconSwords size={20} />}
-          styles={{
-            root: {
-              background: name.trim()
-                ? "linear-gradient(135deg, #8b5cf6, #ec4899)"
-                : undefined,
-            },
-          }}
-        >
-          Jogar Sozinho
-        </Button>
+        <Group gap="md" w="100%">
+          <Button
+            size="lg"
+            radius="md"
+            fullWidth
+            onClick={() => router.push("/torneio/novo")}
+            leftSection={<IconSwords size={20} />}
+            styles={{
+              root: {
+                background: "linear-gradient(135deg, #8b5cf6, #ec4899)",
+              },
+            }}
+          >
+            Mata-Mata
+          </Button>
+          <Button
+            size="lg"
+            radius="md"
+            fullWidth
+            variant="outline"
+            color="grape"
+            onClick={() => router.push("/tierlist/novo")}
+            leftSection={<IconList size={20} />}
+          >
+            Tierlist
+          </Button>
+        </Group>
 
         <Divider w="100%" label="Multiplayer" labelPosition="center" c="#555" />
 
-        <Button
-          size="lg"
-          radius="md"
-          fullWidth
-          variant="outline"
-          color="grape"
-          onClick={handleMultiplayer}
-          leftSection={<IconUsers size={20} />}
-        >
-          Criar Sala Multiplayer
-        </Button>
+        <Group gap="md" w="100%">
+          <Button
+            size="lg"
+            radius="md"
+            fullWidth
+            variant="outline"
+            color="grape"
+            onClick={() => router.push("/sala/criar")}
+            leftSection={<IconUsers size={20} />}
+          >
+            Mata-Mata
+          </Button>
+          <Button
+            size="lg"
+            radius="md"
+            fullWidth
+            variant="outline"
+            color="grape"
+            disabled
+            leftSection={<IconTrophy size={20} />}
+          >
+            Tierlist (Em breve)
+          </Button>
+        </Group>
+
       </Stack>
     </Center>
   )
