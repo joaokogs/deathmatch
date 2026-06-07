@@ -82,10 +82,10 @@ export default function HomePage() {
             fullWidth
             variant="outline"
             color="grape"
-            disabled
-            leftSection={<IconTrophy size={20} />}
+            onClick={() => router.push("/sala/criar")}
+            leftSection={<IconList size={20} />}
           >
-            Tierlist (Em breve)
+            Tierlist
           </Button>
         </Group>
 

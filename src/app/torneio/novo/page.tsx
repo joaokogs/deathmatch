@@ -2,10 +2,14 @@
 
 import { Suspense, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Stack, Text, Container, Center, Loader } from "@mantine/core"
+import { Stack, Text, Container, Center, Loader, Tabs } from "@mantine/core"
+import { IconDice, IconSearch } from "@tabler/icons-react"
 import { AnimeSearch } from "@/src/components/AnimeSearch"
 import { SelectedList } from "@/src/components/SelectedList"
+import { TournamentRandomTab } from "@/src/components/tournament/TournamentRandomTab"
 import { useTournamentStore } from "@/src/store/tournament"
+import { TAB_STYLES } from "@/src/lib/tab-styles"
+import type { Anime } from "@/src/lib/types"
 
 const MAX_ANIMES = 16
 
@@ -29,11 +33,11 @@ function NovoContent() {
     }
   }, [urlName, storeName, setPendingName])
 
-  const handleSelect = (anime: import("@/src/lib/types").Anime) => {
+  const handleSelect = (anime: Anime) => {
     addPendingAnime(anime)
   }
 
-  const handleRemove = (anime: import("@/src/lib/types").Anime) => {
+  const handleRemove = (anime: Anime) => {
     removePendingAnime(anime.id)
   }
 
@@ -53,7 +57,6 @@ function NovoContent() {
         <div>
           <Text
             fw={900}
-            size="xl"
             ta="center"
             style={{
               fontSize: "clamp(22px, 8vw, 32px)",
@@ -65,24 +68,52 @@ function NovoContent() {
           >
             {tournamentName}
           </Text>
-          <Text c="#888" size="sm">
-            Selecione até {MAX_ANIMES} animes para começar o torneio
-          </Text>
         </div>
 
-        <AnimeSearch
-          selectedAnimes={pendingAnimes}
-          onSelect={handleSelect}
-          maxSelections={MAX_ANIMES}
-        />
+        <Tabs defaultValue="manual" variant="pills" w="100%">
+          <Tabs.List justify="center" mb="lg" style={{ gap: "8px" }}>
+            <Tabs.Tab
+              value="manual"
+              leftSection={<IconSearch size={18} />}
+              styles={TAB_STYLES}
+            >
+              Manual
+            </Tabs.Tab>
+            <Tabs.Tab
+              value="random"
+              leftSection={<IconDice size={18} />}
+              styles={TAB_STYLES}
+            >
+              Aleatório
+            </Tabs.Tab>
+          </Tabs.List>
 
-        <SelectedList
-          animes={pendingAnimes}
-          maxSelections={MAX_ANIMES}
-          onRemove={handleRemove}
-          onStart={handleStart}
-          tournamentName={tournamentName}
-        />
+          <Tabs.Panel value="manual">
+            <Stack gap="xl">
+              <Text c="#888" size="sm">
+                Selecione até {MAX_ANIMES} animes para começar o torneio
+              </Text>
+
+              <AnimeSearch
+                selectedAnimes={pendingAnimes}
+                onSelect={handleSelect}
+                maxSelections={MAX_ANIMES}
+              />
+
+              <SelectedList
+                animes={pendingAnimes}
+                maxSelections={MAX_ANIMES}
+                onRemove={handleRemove}
+                onStart={handleStart}
+                tournamentName={tournamentName}
+              />
+            </Stack>
+          </Tabs.Panel>
+
+          <Tabs.Panel value="random">
+            <TournamentRandomTab />
+          </Tabs.Panel>
+        </Tabs>
       </Stack>
     </Container>
   )

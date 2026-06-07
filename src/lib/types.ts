@@ -104,6 +104,42 @@ export interface RoomMessage {
   createdAt: number
 }
 
+export type RoomMode = "tournament" | "tierlist"
+
+export type TierLabel = "lixo" | "ruim" | "mediocre" | "bom" | "top"
+
+export const TIER_LABELS: Record<TierLabel, string> = {
+  top: "Top Top",
+  bom: "Bom",
+  mediocre: "Medíocre",
+  ruim: "Ruim",
+  lixo: "Lixo",
+}
+
+export const TIER_COLORS: Record<TierLabel, string> = {
+  top: "#8b5cf6",
+  bom: "#2f9e44",
+  mediocre: "#5c5c5c",
+  ruim: "#f08c00",
+  lixo: "#e03131",
+}
+
+export interface TierlistPlacement {
+  animeId: number
+  tier: TierLabel
+  placedBy: string
+  forceVoted: boolean
+}
+
+export interface TierlistState {
+  turnOrder: string[]
+  currentTurnIndex: number
+  unranked: RoomAnime[]
+  tiers: Record<TierLabel, TierlistPlacement[]>
+  forceVotesUsed: Record<string, boolean>
+  animeCount: number
+}
+
 export interface Room {
   id: string
   name: string
@@ -115,6 +151,8 @@ export interface Room {
   currentRound: number
   currentBattleIndex: number
   champion: Anime | null
-  status: "waiting" | "selecting" | "voting" | "finished"
+  status: "waiting" | "selecting" | "voting" | "tierlisting" | "finished"
   votes: Record<string, RoomVote[]>
+  mode: RoomMode
+  tierlist: TierlistState | null
 }

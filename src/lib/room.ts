@@ -1,5 +1,5 @@
 import { getRedis } from "./redis"
-import type { Anime, Battle, Room, RoomAnime, RoomMessage } from "./types"
+import type { Anime, Battle, Room, RoomAnime, RoomMessage, RoomMode, TierLabel, TierlistPlacement } from "./types"
 import { shuffle, generateId } from "./utils"
 
 function buildBracket(animes: Anime[]): Battle[][] {
@@ -25,7 +25,8 @@ function buildBracket(animes: Anime[]): Battle[][] {
 
 export async function createRoom(
   name: string,
-  hostNickname: string
+  hostNickname: string,
+  mode: RoomMode = "tournament"
 ): Promise<Room> {
   const redis = getRedis()
   const roomId = generateId().slice(0, 8)
@@ -44,6 +45,17 @@ export async function createRoom(
     champion: null,
     status: "selecting",
     votes: {},
+    mode,
+    tierlist: mode === "tierlist"
+      ? {
+          turnOrder: [],
+          currentTurnIndex: 0,
+          unranked: [],
+          tiers: { lixo: [], ruim: [], mediocre: [], bom: [], top: [] },
+          forceVotesUsed: {},
+          animeCount: 16,
+        }
+      : null,
   }
 
   await redis.set(`room:${roomId}`, JSON.stringify(room))
@@ -57,7 +69,6 @@ export async function getRoom(roomId: string): Promise<Room | null> {
   const data = await redis.get(`room:${roomId}`)
   if (!data) return null
   const room = typeof data === "string" ? JSON.parse(data) : (data as Room)
-  // Garante campos que podem estar faltando em dados antigos do Redis
   if (!room.messages) room.messages = []
   if (!room.pool) room.pool = []
   return room
@@ -74,7 +85,11 @@ export async function joinRoom(
   if (room.status !== "selecting" && room.status !== "waiting") {
     return { error: "Sala já iniciou" }
   }
-  if (room.players.length >= 16) return { error: "Sala cheia" }
+
+  const maxPlayers = room.mode === "tierlist" ? 4 : 16
+  if (room.players.length >= maxPlayers) {
+    return { error: `Sala cheia (máx ${maxPlayers} jogadores)` }
+  }
   if (room.players.some((p) => p.nickname === nickname)) {
     return { error: "Esse nick já está em uso" }
   }
@@ -101,7 +116,9 @@ export async function addAnimeToPool(
   if (!room.players.find((p) => p.id === playerId)) {
     return { error: "Jogador não está na sala" }
   }
-  if (room.pool.length >= 16) return { error: "Pool cheia (máx 16 animes)" }
+
+  const maxPool = room.mode === "tierlist" ? (room.tierlist?.animeCount ?? 16) : 16
+  if (room.pool.length >= maxPool) return { error: `Pool cheia (máx ${maxPool} animes)` }
   if (room.pool.find((a) => a.id === anime.id)) {
     return { error: "Anime já adicionado" }
   }
@@ -134,7 +151,6 @@ export async function removeAnimeFromPool(
   const anime = room.pool.find((a) => a.id === animeId)
   if (!anime) return { error: "Anime não está na pool" }
 
-  // Qualquer um pode remover
   room.pool = room.pool.filter((a) => a.id !== animeId)
 
   await redis.set(`room:${roomId}`, JSON.stringify(room))
@@ -142,12 +158,48 @@ export async function removeAnimeFromPool(
   return {}
 }
 
-export async function startGame(roomId: string, playerId: string): Promise<{ error?: string }> {
+export async function startGame(
+  roomId: string,
+  playerId: string,
+  animeCount?: 8 | 16
+): Promise<{ error?: string }> {
   const redis = getRedis()
   const room = await getRoom(roomId)
 
   if (!room) return { error: "Sala não encontrada" }
   if (room.hostId !== playerId) return { error: "Só o host pode iniciar" }
+
+  if (room.mode === "tierlist") {
+    if (room.players.length < 2) return { error: "Precisa de pelo menos 2 jogadores" }
+    if (room.players.length > 4) return { error: "Máximo de 4 jogadores" }
+
+    const count = animeCount || room.tierlist?.animeCount || 16
+    if (room.pool.length !== count) {
+      return { error: `Pool precisa ter exatamente ${count} animes` }
+    }
+
+    const turnOrder = shuffle(room.players.map((p) => p.id))
+    const forceVotesUsed: Record<string, boolean> = {}
+    for (const pid of room.players.map((p) => p.id)) {
+      forceVotesUsed[pid] = false
+    }
+
+    room.tierlist = {
+      turnOrder,
+      currentTurnIndex: 0,
+      unranked: shuffle(room.pool),
+      tiers: { lixo: [], ruim: [], mediocre: [], bom: [], top: [] },
+      forceVotesUsed,
+      animeCount: count,
+    }
+
+    room.status = "tierlisting"
+    await redis.set(`room:${roomId}`, JSON.stringify(room))
+    await redis.expire(`room:${roomId}`, 86400)
+    return {}
+  }
+
+  // Modo torneio (comportamento existente)
   if (room.players.length < 2) return { error: "Precisa de pelo menos 2 jogadores" }
   if (room.pool.length < 2 || room.pool.length % 2 !== 0) {
     return { error: "Pool precisa ter um número par de animes (mín. 2)" }
@@ -166,6 +218,119 @@ export async function startGame(roomId: string, playerId: string): Promise<{ err
 
   await redis.set(`room:${roomId}`, JSON.stringify(room))
   return {}
+}
+
+export async function placeAnimeInTier(
+  roomId: string,
+  playerId: string,
+  animeId: number,
+  tier: TierLabel
+): Promise<{ error?: string }> {
+  const redis = getRedis()
+  const room = await getRoom(roomId)
+
+  if (!room) return { error: "Sala não encontrada" }
+  if (room.status !== "tierlisting") return { error: "Fase de classificação encerrada" }
+  if (!room.tierlist) return { error: "Estado da tierlist não encontrado" }
+
+  const tl = room.tierlist
+  const currentPlayerId = tl.turnOrder[tl.currentTurnIndex]
+  if (currentPlayerId !== playerId) return { error: "Não é sua vez" }
+
+  const animeIndex = tl.unranked.findIndex((a) => a.id === animeId)
+  if (animeIndex === -1) return { error: "Anime não está na fila de não classificados" }
+  if (animeIndex !== 0) return { error: "Você só pode colocar o primeiro anime da fila" }
+
+  if (tier !== "ruim" && tier !== "mediocre" && tier !== "bom") {
+    if (tl.tiers[tier].length >= 3) return { error: `Tier ${tier} já está cheio (máx 3)` }
+  }
+
+  const anime = tl.unranked[0]
+  const placement: TierlistPlacement = {
+    animeId: anime.id,
+    tier,
+    placedBy: playerId,
+    forceVoted: false,
+  }
+
+  tl.tiers[tier].push(placement)
+  tl.unranked.shift()
+  tl.currentTurnIndex = (tl.currentTurnIndex + 1) % tl.turnOrder.length
+
+  if (checkTierlistFinished(tl)) {
+    room.status = "finished"
+  }
+
+  await redis.set(`room:${roomId}`, JSON.stringify(room))
+  await redis.expire(`room:${roomId}`, 86400)
+  return {}
+}
+
+export async function useForceVote(
+  roomId: string,
+  playerId: string,
+  animeId: number,
+  fromTier: TierLabel,
+  toTier: TierLabel
+): Promise<{ error?: string; swappedAnimeId?: number }> {
+  const redis = getRedis()
+  const room = await getRoom(roomId)
+
+  if (!room) return { error: "Sala não encontrada" }
+  if (room.status !== "tierlisting") return { error: "Fase de classificação encerrada" }
+  if (!room.tierlist) return { error: "Estado da tierlist não encontrado" }
+
+  const tl = room.tierlist
+  const currentPlayerId = tl.turnOrder[tl.currentTurnIndex]
+  if (currentPlayerId !== playerId) return { error: "Não é sua vez" }
+
+  if (tl.forceVotesUsed[playerId]) return { error: "Você já usou seu voto com força" }
+  if (fromTier === toTier) return { error: "O tier de destino deve ser diferente" }
+
+  const fromPlacement = tl.tiers[fromTier].find((p) => p.animeId === animeId)
+  if (!fromPlacement) return { error: "Anime não encontrado no tier de origem" }
+  if (fromPlacement.forceVoted) return { error: "Este anime foi travado por um voto com força e não pode ser movido" }
+
+  const toTierAnimes = tl.tiers[toTier]
+  if (toTierAnimes.length === 0) return { error: "Não pode mover para um tier vazio" }
+
+  let swappedAnimeId: number | undefined
+
+  if ((toTier === "lixo" || toTier === "top") && toTierAnimes.length >= 3) {
+    // Precisa trocar: remove o último do tier destino e coloca no fromTier
+    const swapped = toTierAnimes.pop()!
+    swappedAnimeId = swapped.animeId
+    // Recoloca o anime trocado no fromTier, sem forceVoted
+    tl.tiers[fromTier].push({
+      animeId: swapped.animeId,
+      tier: fromTier,
+      placedBy: swapped.placedBy,
+      forceVoted: false,
+    })
+  }
+
+  // Remove o anime do tier de origem
+  tl.tiers[fromTier] = tl.tiers[fromTier].filter((p) => p.animeId !== animeId)
+
+  // Marca como force voted e adiciona no destino
+  fromPlacement.forceVoted = true
+  fromPlacement.tier = toTier
+  tl.tiers[toTier].push(fromPlacement)
+
+  tl.forceVotesUsed[playerId] = true
+  tl.currentTurnIndex = (tl.currentTurnIndex + 1) % tl.turnOrder.length
+
+  if (checkTierlistFinished(tl)) {
+    room.status = "finished"
+  }
+
+  await redis.set(`room:${roomId}`, JSON.stringify(room))
+  await redis.expire(`room:${roomId}`, 86400)
+  return { swappedAnimeId }
+}
+
+function checkTierlistFinished(tl: NonNullable<Room["tierlist"]>): boolean {
+  return tl.unranked.length === 0 && tl.tiers.lixo.length === 3 && tl.tiers.top.length === 3
 }
 
 export async function voteAnime(

@@ -31,6 +31,20 @@ query ($search: String, $genre_in: [String], $page: Int, $perPage: Int, $sort: [
 }
 `
 
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .trim()
+    .replace(/\s+\d+(?:st|nd|rd|th)?\s*season$/i, "")
+    .replace(/\s+season\s+\d+$/i, "")
+    .replace(/\s+part\s+(?:[ivxlcdm]+|\d+)$/i, "")
+    .replace(/\s+cour\s+\d+$/i, "")
+    .replace(/\s+\(tv\)$/i, "")
+    .replace(/\s+\d+(?:st|nd|rd|th)?\s*series$/i, "")
+    .replace(/\s+s\d+$/i, "")
+    .trim()
+}
+
 function mapMediaToAnime(media: AniListMedia): Anime {
   return {
     id: media.id,
@@ -108,4 +122,55 @@ export async function fetchAnimes(
   } finally {
     clearTimeout(timeoutId)
   }
+}
+
+export async function fetchAnimesPool(
+  options: { genres?: string[]; maxPages?: number },
+  signal?: AbortSignal
+): Promise<Anime[]> {
+  const { genres, maxPages = 5 } = options
+
+  const firstResult = await fetchAnimes(
+    { genres, page: 1, sort: "POPULARITY_DESC" },
+    signal
+  )
+
+  const pool = new Map<number, Anime>()
+  const seenTitles = new Set<string>()
+
+  for (const anime of firstResult.animes) {
+    pool.set(anime.id, anime)
+    seenTitles.add(normalizeTitle(anime.title))
+  }
+
+  const lastPage = firstResult.pageInfo?.lastPage ?? 1
+  const pagesToFetch = Math.min(lastPage, maxPages)
+
+  if (pagesToFetch <= 1) {
+    return Array.from(pool.values())
+  }
+
+  const sorts = ["SCORE_DESC", "TRENDING_DESC", "FAVOURITES_DESC", "POPULARITY_DESC"]
+
+  const requests = Array.from({ length: pagesToFetch - 1 }, (_, i) => {
+    const page = i + 2
+    const sort = sorts[(page - 2) % sorts.length]
+    return fetchAnimes({ genres, page, sort }, signal)
+  })
+
+  const results = await Promise.allSettled(requests)
+
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      for (const anime of result.value.animes) {
+        const normalized = normalizeTitle(anime.title)
+        if (!pool.has(anime.id) && !seenTitles.has(normalized)) {
+          pool.set(anime.id, anime)
+          seenTitles.add(normalized)
+        }
+      }
+    }
+  }
+
+  return Array.from(pool.values())
 }

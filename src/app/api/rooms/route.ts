@@ -3,7 +3,7 @@ import { createRoom } from "@/src/lib/room"
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, hostNickname } = await req.json()
+    const { name, hostNickname, mode } = await req.json()
 
     if (!name || !hostNickname) {
       return NextResponse.json(
@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const room = await createRoom(name, hostNickname)
+    const room = await createRoom(name, hostNickname, mode || "tournament")
 
     return NextResponse.json({ room, hostId: room.hostId })
   } catch (err) {

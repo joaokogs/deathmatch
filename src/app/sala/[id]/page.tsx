@@ -4,15 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import {
   Stack, Text, Button, Group, Badge, Center, Loader,
-  Card, Image, Box, SimpleGrid, Avatar, Progress, TextInput,
-  ActionIcon, Paper, Drawer, Modal,
+  Card, Image, Box, SimpleGrid, Avatar, TextInput, Progress,
+  ActionIcon, Paper, Drawer, Tabs, SegmentedControl, Modal,
 } from "@mantine/core"
 import { useDisclosure } from "@mantine/hooks"
-import { IconCopy, IconArrowLeft, IconX, IconSearch, IconChevronLeft, IconChevronRight, IconUsers, IconLayoutSidebar, IconList, IconCrown } from "@tabler/icons-react"
-import { fetchAnimes } from "@/src/lib/anilist"
+import {
+  IconCopy, IconArrowLeft, IconX, IconSearch, IconChevronLeft, IconChevronRight,
+  IconUsers, IconLayoutSidebar, IconList, IconCrown, IconDice, IconPlayerPlay,
+} from "@tabler/icons-react"
+import { fetchAnimes, fetchAnimesPool } from "@/src/lib/anilist"
 import { GenreTags } from "@/src/components/GenreTags"
 import { computeRanking } from "@/src/lib/ranking"
-import type { Room, Anime, SearchResult } from "@/src/lib/types"
+import { OnlineTierBoard } from "@/src/components/tierlist/OnlineTierBoard"
+import { TierlistResult } from "@/src/components/tierlist/TierlistResult"
+import { shuffle } from "@/src/lib/utils"
+import type { Room, Anime, SearchResult, TierLabel, RoomAnime } from "@/src/lib/types"
 
 const MAX_POOL = 16
 
@@ -45,6 +51,15 @@ export default function SalaPage() {
 
   const pollRef = useRef<ReturnType<typeof setInterval>>(null)
 
+  // Tierlist modes
+  const [tierlistTab, setTierlistTab] = useState<string>("manual")
+  const [tierlistCount, setTierlistCount] = useState<8 | 16>(() => {
+    return (room?.tierlist?.animeCount as 8 | 16) || 16
+  })
+  const [randomGenres, setRandomGenres] = useState<string[]>([])
+  const [randomLoading, setRandomLoading] = useState(false)
+  const [randomError, setRandomError] = useState<string | null>(null)
+
   // Player ID + Auto-reconnect
   useEffect(() => {
     let cancelled = false
@@ -54,10 +69,8 @@ export default function SalaPage() {
       const savedRoomId = localStorage.getItem("anime-battle-room-id")
       const savedNickname = localStorage.getItem("anime-battle-nickname")
 
-      // Sem dados salvos → mostra tela de join
       if (!savedPlayerId || !savedRoomId) return
 
-      // roomId salvo não bate com a sala atual → dados stale, limpar
       if (savedRoomId !== roomId) {
         localStorage.removeItem("anime-battle-player-id")
         localStorage.removeItem("anime-battle-room-id")
@@ -65,7 +78,6 @@ export default function SalaPage() {
         return
       }
 
-      // roomId bate → tenta reconectar via API
       try {
         const res = await fetch(`/api/rooms/${roomId}/reconnect`, {
           method: "POST",
@@ -74,7 +86,6 @@ export default function SalaPage() {
         })
 
         if (!res.ok) {
-          // Player não é mais válido (sala expirou, removido, etc.)
           localStorage.removeItem("anime-battle-player-id")
           localStorage.removeItem("anime-battle-room-id")
           localStorage.removeItem("anime-battle-nickname")
@@ -90,7 +101,6 @@ export default function SalaPage() {
           }
         }
       } catch {
-        // Erro de rede → limpa dados para forçar re-join
         if (!cancelled) {
           localStorage.removeItem("anime-battle-player-id")
           localStorage.removeItem("anime-battle-room-id")
@@ -139,7 +149,6 @@ export default function SalaPage() {
     }
   }, [])
 
-  // Carrega "Todos" ao entrar
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     doFetch({ page: 1 })
@@ -211,11 +220,21 @@ export default function SalaPage() {
 
   const handleStart = async () => {
     if (!playerId) return
+    const isTierlist = room?.mode === "tierlist"
     const res = await fetch(`/api/rooms/${roomId}/start`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ playerId }),
+      body: JSON.stringify({
+        playerId,
+        ...(isTierlist ? { animeCount: room?.tierlist?.animeCount || 16 } : {}),
+      }),
     })
-    if (res.ok) setVotedAnime(null)
+    if (res.ok) {
+      setVotedAnime(null)
+      fetchRoom()
+    } else {
+      const data = await res.json()
+      setSearchError(data.error)
+    }
   }
 
   const handleVote = async (animeId: number) => {
@@ -228,6 +247,53 @@ export default function SalaPage() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ playerId, battleId: cb.id, animeId }),
     })
+  }
+
+  // Tierlist actions
+  const handlePlaceAnime = async (animeId: number, tier: TierLabel) => {
+    if (!playerId) return
+    await fetch(`/api/rooms/${roomId}/tierlist/place`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerId, animeId, tier }),
+    })
+    fetchRoom()
+  }
+
+  const handleForceVote = async (animeId: number, fromTier: TierLabel, toTier: TierLabel, swapAnimeId?: number) => {
+    if (!playerId) return
+    await fetch(`/api/rooms/${roomId}/tierlist/force-vote`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerId, animeId, fromTier, toTier }),
+    })
+    fetchRoom()
+  }
+
+  const handleRandomGenerate = async () => {
+    if (!playerId) return
+    setRandomLoading(true)
+    setRandomError(null)
+    try {
+      const pool = await fetchAnimesPool(
+        { genres: randomGenres.length > 0 ? randomGenres : undefined, maxPages: 5 }
+      )
+      const count = room?.tierlist?.animeCount || 16
+      if (pool.length < count) {
+        setRandomError(`Só encontramos ${pool.length} animes. Tente com mais gêneros.`)
+        return
+      }
+      const picked = shuffle(pool).slice(0, count)
+      for (const anime of picked) {
+        await fetch(`/api/rooms/${roomId}/animes`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ playerId, anime }),
+        })
+      }
+      fetchRoom()
+    } catch {
+      setRandomError("Erro ao buscar animes")
+    } finally {
+      setRandomLoading(false)
+    }
   }
 
   const handleCopyLink = () => {
@@ -273,10 +339,230 @@ export default function SalaPage() {
 
   const isHost = playerId === room.hostId
   const poolCount = room.pool.length
-  const poolOk = poolCount >= 2 && poolCount % 2 === 0
   const poolAnimeIds = new Set(room.pool.map((a) => a.id))
 
-  // ====== RESULTADO ======
+  // ====== TIERLIST RESULT ======
+  if (room.mode === "tierlist" && room.status === "finished" && room.tierlist) {
+    return (
+      <TierlistResult
+        tierlist={room.tierlist}
+        pool={room.pool}
+        players={room.players}
+      />
+    )
+  }
+
+  // ====== TIERLIST BOARD ======
+  if (room.mode === "tierlist" && room.status === "tierlisting") {
+    return (
+      <OnlineTierBoard
+        room={room}
+        playerId={playerId}
+        onPlaceAnime={handlePlaceAnime}
+        onForceVote={handleForceVote}
+      />
+    )
+  }
+
+  // ====== TIERLIST LOBBY (selecting) ======
+  if (room.mode === "tierlist") {
+    const count = room.tierlist?.animeCount || 16
+    const poolOk = poolCount === count
+
+    const lobbySidebarContent = (
+      <Stack p="md" gap="sm" style={{ flex: 1, overflow: "hidden" }}>
+        <Group justify="space-between">
+          <Text fw={700} size="sm" c="white">{room.name}</Text>
+          <Button size="xs" variant="subtle" color="gray" onClick={handleLeave}>
+            <IconArrowLeft size={16} />
+          </Button>
+        </Group>
+        <Group gap={4}>
+          <Badge size="sm" color="grape">{room.id}</Badge>
+          <Badge size="sm" color="yellow" variant="light">Tierlist</Badge>
+          <Button size="xs" variant="subtle" color="gray" leftSection={<IconCopy size={12} />}
+            onClick={handleCopyLink}>{copied ? "OK" : "Link"}</Button>
+        </Group>
+        <Text size="xs" c="#888" mt="sm">Jogadores ({room.players.length}/4)</Text>
+        <Stack gap={4}>
+          {room.players.map((p) => (
+            <Group key={p.id} gap={6} p={4} style={{ borderRadius: 6, backgroundColor: "#1a1a1a" }}>
+              <Avatar size="sm" color={p.isHost ? "grape" : "blue"} radius="xl">{p.nickname[0].toUpperCase()}</Avatar>
+              <Text size="sm" c="white">{p.nickname}</Text>
+              {p.isHost && <Badge size="xs" color="grape" variant="light">Host</Badge>}
+            </Group>
+          ))}
+        </Stack>
+      </Stack>
+    )
+
+    return (
+      <Box style={{ display: "flex", height: "100vh" }}>
+        <Paper
+          visibleFrom="md"
+          w={sidebarOpened ? 300 : 0}
+          bg="#121212"
+          style={{
+            borderRight: sidebarOpened ? "1px solid #2a2a2a" : "none",
+            display: "flex", flexDirection: "column", overflow: "hidden",
+            transition: "width 0.3s ease, border-color 0.3s ease",
+          }}
+        >
+          <Box style={{ opacity: sidebarOpened ? 1 : 0, transition: "opacity 0.2s ease", flex: 1, minWidth: 300 }}>
+            {lobbySidebarContent}
+          </Box>
+        </Paper>
+        <Drawer hiddenFrom="md" opened={sidebarOpened || false} onClose={closeSidebar} size="100%" position="left"
+          styles={{ content: { backgroundColor: "#121212" }, header: { backgroundColor: "#121212" }, title: { color: "white" } }}>
+          {lobbySidebarContent}
+        </Drawer>
+
+        <Box style={{ flex: 1, overflow: "auto" }} p="md">
+          <Stack gap="md" style={{ maxWidth: 1100, margin: "0 auto" }}>
+            <Group gap="xs">
+              <ActionIcon variant="subtle" color="gray" hiddenFrom="md" onClick={toggleSidebar} aria-label="Abrir sidebar">
+                <IconLayoutSidebar size={20} />
+              </ActionIcon>
+              <ActionIcon variant="subtle" color="gray" visibleFrom="md" onClick={toggleSidebar} aria-label={sidebarOpened ? "Fechar sidebar" : "Abrir sidebar"}>
+                {sidebarOpened ? <IconChevronLeft size={18} /> : <IconChevronRight size={18} />}
+              </ActionIcon>
+            </Group>
+
+            <Group justify="space-between">
+              <Text fw={600} c="white">Pool ({poolCount}/{count})</Text>
+              <Badge size="sm" color={poolOk ? "green" : "yellow"} variant="light">
+                {poolOk ? "OK" : `${count - poolCount} restantes`}
+              </Badge>
+            </Group>
+
+            <Box style={{ overflowX: "auto", scrollbarWidth: "thin", scrollbarColor: "#2a2a2a transparent" }}>
+              <Group gap="sm" wrap="nowrap" style={{ minHeight: 170, paddingBottom: 4 }}>
+                {room.pool.length === 0 ? (
+                  <div style={{ minWidth: "100%", minHeight: 160, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 12, border: "1px dashed rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.02)" }}>
+                    <Text c="rgba(255,255,255,0.35)" size="sm">
+                      Nenhum anime ainda. Selecione abaixo para adicionar!
+                    </Text>
+                  </div>
+                ) : room.pool.map((a, idx) => (
+                  <div key={a.id} className="group relative overflow-hidden rounded-xl flex-shrink-0 transition-all duration-300 hover:scale-105"
+                    style={{ width: 120, aspectRatio: "2/3", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 4px 12px rgba(0,0,0,0.3)" }}>
+                    <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${a.coverImage})` }} />
+                    <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.85))" }} />
+                    <div style={{ position: "absolute", top: 6, left: 6, width: 22, height: 22, borderRadius: "50%", background: "rgba(139, 92, 246, 0.8)", backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid rgba(255,255,255,0.15)" }}>
+                      <Text size="xs" fw={700} c="white" style={{ fontSize: 11 }}>{idx + 1}</Text>
+                    </div>
+                    <ActionIcon variant="filled" color="red" size="xs" radius="xl"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                      style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", border: "1px solid rgba(255,255,255,0.1)" }}
+                      onClick={() => handleRemoveAnime(a.id)} aria-label={`Remover ${a.title}`}>
+                      <IconX size={12} />
+                    </ActionIcon>
+                    <div className="absolute bottom-0 left-0 right-0" style={{ padding: "6px 8px", background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                      <Text size="xs" fw={600} c="white" truncate style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)", fontSize: 11 }}>{a.title}</Text>
+                      <Text size="xs" c="rgba(255,255,255,0.5)" truncate style={{ fontSize: 10, marginTop: 1 }}>+{a.addedByName}</Text>
+                    </div>
+                  </div>
+                ))}
+              </Group>
+            </Box>
+
+            <Tabs value={tierlistTab} onChange={(v) => setTierlistTab(v || "manual")} variant="pills">
+              <Tabs.List justify="center" mb="md" style={{ gap: 8 }}>
+                <Tabs.Tab value="manual" leftSection={<IconSearch size={18} />}
+                  styles={{ tab: { backgroundColor: "#141414", color: "#888", border: "1px solid #2a2a2a", "&[data-active]": { background: "linear-gradient(135deg, #8b5cf6, #ec4899)", color: "white", borderColor: "transparent" } } }}>
+                  Manual
+                </Tabs.Tab>
+                <Tabs.Tab value="random" leftSection={<IconDice size={18} />}
+                  styles={{ tab: { backgroundColor: "#141414", color: "#888", border: "1px solid #2a2a2a", "&[data-active]": { background: "linear-gradient(135deg, #8b5cf6, #ec4899)", color: "white", borderColor: "transparent" } } }}>
+                  Aleatório
+                </Tabs.Tab>
+              </Tabs.List>
+
+              <Tabs.Panel value="manual">
+                <TextInput placeholder="Buscar anime por nome..." leftSection={<IconSearch size={20} />}
+                  value={query} onChange={(e) => handleSearch(e.currentTarget.value)}
+                  size="lg" radius="md"
+                  styles={{ input: { backgroundColor: "#141414", border: "1px solid #2a2a2a", color: "white" } }} />
+                <GenreTags selected={selectedGenres} onSelect={handleGenresChange} />
+                {searchLoading && <Center py="xl"><Loader color="grape" /></Center>}
+                {searchError && <Text c="red" ta="center" py="md">{searchError}</Text>}
+                {!searchLoading && result?.animes.length === 0 && !searchError && (
+                  <Text c="dimmed" ta="center" py="xl">Nenhum anime encontrado.</Text>
+                )}
+                {result && result.animes.length > 0 && !searchLoading && (
+                  <>
+                    <SimpleGrid cols={{ base: 2, sm: 3, md: 4, lg: 5 }} spacing="sm">
+                      {result.animes.map((anime) => {
+                        const inPool = poolAnimeIds.has(anime.id)
+                        const canAdd = !inPool && poolCount < count
+                        return (
+                          <Card key={anime.id} p={4} radius="md" bg="#1a1a1a"
+                            style={{ cursor: canAdd ? "pointer" : "default", border: inPool ? "2px solid #8b5cf6" : "2px solid transparent", opacity: inPool ? 0.6 : 1, transition: "transform 0.2s" }}
+                            className={canAdd ? "hover:scale-105" : ""}
+                            onClick={() => canAdd && handleAddAnime(anime)}>
+                            <Card.Section>
+                              <Image src={anime.coverImage} alt={anime.title} w="100%" h={180} fit="cover"
+                                fallbackSrc="https://via.placeholder.com/160x180?text=No+Image" />
+                            </Card.Section>
+                            <Text fw={600} size="sm" ta="center" lineClamp={2} mt={4} c="white">{anime.title}</Text>
+                            {inPool && <Text size="xs" ta="center" c="grape">✓ Adicionado</Text>}
+                          </Card>
+                        )
+                      })}
+                    </SimpleGrid>
+                    {result.pageInfo && result.pageInfo.lastPage > 1 && (
+                      <Group justify="center" mt="md">
+                        <Button variant="outline" color="gray" size="sm" disabled={page <= 1}
+                          onClick={() => goToPage(page - 1)} leftSection={<IconChevronLeft size={16} />}>Anterior</Button>
+                        <Text size="sm" c="dimmed" px="md">Página {result.pageInfo.currentPage} de {result.pageInfo.lastPage} — {result.pageInfo.total} resultados</Text>
+                        <Button variant="outline" color="gray" size="sm" disabled={page >= result.pageInfo.lastPage}
+                          onClick={() => goToPage(page + 1)} rightSection={<IconChevronRight size={16} />}>Próxima</Button>
+                      </Group>
+                    )}
+                  </>
+                )}
+              </Tabs.Panel>
+
+              <Tabs.Panel value="random">
+                <Stack gap="md" align="center">
+                  <Text c="#888" size="sm" ta="center">
+                    Gere {count} animes aleatórios para a tierlist!
+                  </Text>
+                  <GenreTags selected={randomGenres} onSelect={setRandomGenres} />
+                  {randomError && <Text c="red" size="sm" role="alert">{randomError}</Text>}
+                  <Button size="lg" radius="md" fullWidth
+                    disabled={randomLoading}
+                    onClick={handleRandomGenerate}
+                    leftSection={randomLoading ? <Loader color="white" size="sm" /> : <IconDice size={20} />}
+                    styles={{ root: { background: !randomLoading ? "linear-gradient(135deg, #8b5cf6, #ec4899)" : undefined } }}>
+                    {randomLoading ? "Gerando..." : "Gerar Animes!"}
+                  </Button>
+                </Stack>
+              </Tabs.Panel>
+            </Tabs>
+
+            {isHost ? (
+              <Button size="lg" radius="md" fullWidth
+                disabled={!poolOk || room.players.length < 2}
+                onClick={handleStart}
+                leftSection={<IconPlayerPlay size={20} />}
+                styles={{ root: { background: poolOk && room.players.length >= 2 ? "linear-gradient(135deg, #8b5cf6, #ec4899)" : undefined } }}>
+                {room.players.length < 2 ? "Aguardando jogadores..."
+                  : !poolOk ? `Selecione exatamente ${count} animes (${poolCount}/${count})`
+                  : `Iniciar Tierlist!`}
+              </Button>
+            ) : (
+              <Text c="dimmed" size="sm" ta="center" py="md">
+                Adicione animes na pool! O host inicia quando todos estiverem prontos.
+              </Text>
+            )}
+          </Stack>
+        </Box>
+      </Box>
+    )
+  }
+
+  // ====== RESULTADO TORNEIO ======
   if (room.status === "finished" && room.champion) {
     const ranking = computeRanking(room.bracket, room.champion, room.pool)
 
@@ -290,55 +576,28 @@ export default function SalaPage() {
             <Text fw={700} size="xl" c="white">{room.champion.title}</Text>
             <Group gap="md" w="100%" maw={400}>
               <Button variant="outline" color="grape" size="md" radius="md" fullWidth
-                onClick={() => setRankingOpen(true)} leftSection={<IconList size={18} />}>
-                Ver Ranking Completo
-              </Button>
-              <Button variant="outline" color="gray" size="md" radius="md" fullWidth onClick={handleLeave}>
-                Voltar ao Início
-              </Button>
+                onClick={() => setRankingOpen(true)} leftSection={<IconList size={18} />}>Ver Ranking Completo</Button>
+              <Button variant="outline" color="gray" size="md" radius="md" fullWidth onClick={handleLeave}>Voltar ao Início</Button>
             </Group>
           </Stack>
         </Center>
 
-        <Modal
-          opened={rankingOpen}
-          onClose={() => setRankingOpen(false)}
-          title="Ranking Final"
-          size="sm"
-          centered
-          styles={{
-            content: { backgroundColor: "#141414", border: "1px solid #2a2a2a" },
-            header: { backgroundColor: "#141414" },
-            title: { color: "white", fontWeight: 700 },
-            body: { padding: 0 },
-          }}
-        >
+        <Modal opened={rankingOpen} onClose={() => setRankingOpen(false)} title="Ranking Final" size="sm" centered
+          styles={{ content: { backgroundColor: "#141414", border: "1px solid #2a2a2a" }, header: { backgroundColor: "#141414" }, title: { color: "white", fontWeight: 700 }, body: { padding: 0 } }}>
           <Stack gap={0}>
             {ranking.map((entry, idx) => (
-              <Box
-                key={entry.anime.id}
-                p="sm"
-                style={{
-                  borderBottom: idx < ranking.length - 1 ? "1px solid #2a2a2a" : "none",
-                  background: entry.isChampion ? "rgba(139, 92, 246, 0.1)" : "transparent",
-                }}
-              >
+              <Box key={entry.anime.id} p="sm"
+                style={{ borderBottom: idx < ranking.length - 1 ? "1px solid #2a2a2a" : "none", background: entry.isChampion ? "rgba(139, 92, 246, 0.1)" : "transparent" }}>
                 <Group gap="sm" wrap="nowrap">
                   <Box ta="center" style={{ minWidth: 44 }}>
-                    {entry.isChampion ? (
-                      <IconCrown size={22} color="#f59e0b" />
-                    ) : (
-                      <Text fw={700} size="lg" c="#666">{entry.position}</Text>
-                    )}
+                    {entry.isChampion ? <IconCrown size={22} color="#f59e0b" /> : <Text fw={700} size="lg" c="#666">{entry.position}</Text>}
                   </Box>
                   <Avatar src={entry.anime.coverImage} alt={entry.anime.title} size="md" radius="sm" style={{ minWidth: 40 }} />
                   <Box style={{ flex: 1, minWidth: 0 }}>
                     <Text fw={600} size="sm" c="white" truncate>{entry.anime.title}</Text>
                     <Text size="xs" c={entry.isChampion ? "grape" : "#666"}>{entry.label}</Text>
                   </Box>
-                  {entry.anime.averageScore && (
-                    <Text size="xs" c="#888" style={{ whiteSpace: "nowrap" }}>★ {entry.anime.averageScore}%</Text>
-                  )}
+                  {entry.anime.averageScore && <Text size="xs" c="#888" style={{ whiteSpace: "nowrap" }}>★ {entry.anime.averageScore}%</Text>}
                 </Group>
               </Box>
             ))}
@@ -348,7 +607,7 @@ export default function SalaPage() {
     )
   }
 
-  // ====== VOTAÇÃO ======
+  // ====== VOTAÇÃO TORNEIO ======
   if (room.status === "voting") {
     const currentBattle = room.bracket[room.currentRound]?.find((b) => !b.winner) || room.bracket[room.currentRound]?.[0]
     const totalVotes = currentBattle ? (room.votes[currentBattle.id]?.length || 0) : 0
@@ -372,46 +631,17 @@ export default function SalaPage() {
     )
 
     return <Box style={{ display: "flex", height: "100vh" }}>
-      {/* Sidebar desktop */}
-      <Paper
-        visibleFrom="md"
-        w={sidebarOpened ? 280 : 0}
-        bg="#121212"
-        style={{
-          borderRight: sidebarOpened ? "1px solid #2a2a2a" : "none",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          transition: "width 0.3s ease, border-color 0.3s ease",
-        }}
-      >
-        <Box style={{ opacity: sidebarOpened ? 1 : 0, transition: "opacity 0.2s ease", flex: 1, minWidth: 280 }}>
-          {votingSidebarContent}
-        </Box>
+      <Paper visibleFrom="md" w={sidebarOpened ? 280 : 0} bg="#121212"
+        style={{ borderRight: sidebarOpened ? "1px solid #2a2a2a" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.3s ease, border-color 0.3s ease" }}>
+        <Box style={{ opacity: sidebarOpened ? 1 : 0, transition: "opacity 0.2s ease", flex: 1, minWidth: 280 }}>{votingSidebarContent}</Box>
       </Paper>
-
-      {/* Sidebar mobile drawer */}
-      <Drawer
-        hiddenFrom="md"
-        opened={sidebarOpened || false}
-        onClose={closeSidebar}
-        size="100%"
-        position="left"
-        styles={{
-          content: { backgroundColor: "#121212" },
-          header: { backgroundColor: "#121212" },
-          title: { color: "white" },
-        }}
-      >
+      <Drawer hiddenFrom="md" opened={sidebarOpened || false} onClose={closeSidebar} size="100%" position="left"
+        styles={{ content: { backgroundColor: "#121212" }, header: { backgroundColor: "#121212" }, title: { color: "white" } }}>
         {votingSidebarContent}
       </Drawer>
-
-      {/* Conteúdo */}
       <Box style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }} p="md">
         <Group gap="xs" style={{ position: "absolute", top: 16, left: 16 }}>
-          <ActionIcon variant="subtle" color="gray" hiddenFrom="md" onClick={toggleSidebar} aria-label="Abrir sidebar">
-            <IconLayoutSidebar size={20} />
-          </ActionIcon>
+          <ActionIcon variant="subtle" color="gray" hiddenFrom="md" onClick={toggleSidebar} aria-label="Abrir sidebar"><IconLayoutSidebar size={20} /></ActionIcon>
           <ActionIcon variant="subtle" color="gray" visibleFrom="md" onClick={toggleSidebar} aria-label={sidebarOpened ? "Fechar sidebar" : "Abrir sidebar"}>
             {sidebarOpened ? <IconChevronLeft size={18} /> : <IconChevronRight size={18} />}
           </ActionIcon>
@@ -452,7 +682,8 @@ export default function SalaPage() {
     </Box>
   }
 
-  // ====== LOBBY / SELEÇÃO ======
+  // ====== LOBBY TORNEIO (selecting) ======
+  const poolOk = poolCount >= 2 && poolCount % 2 === 0
   const animes = result?.animes || []
   const pageInfo = result?.pageInfo
 
@@ -469,7 +700,6 @@ export default function SalaPage() {
         <Button size="xs" variant="subtle" color="gray" leftSection={<IconCopy size={12} />}
           onClick={handleCopyLink}>{copied ? "OK" : "Link"}</Button>
       </Group>
-
       <Text size="xs" c="#888" mt="sm">Jogadores ({room.players.length})</Text>
       <Stack gap={4}>
         {room.players.map((p) => (
@@ -485,54 +715,26 @@ export default function SalaPage() {
 
   return (
     <Box style={{ display: "flex", height: "100vh" }}>
-      {/* Sidebar desktop */}
-      <Paper
-        visibleFrom="md"
-        w={sidebarOpened ? 300 : 0}
-        bg="#121212"
-        style={{
-          borderRight: sidebarOpened ? "1px solid #2a2a2a" : "none",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          transition: "width 0.3s ease, border-color 0.3s ease",
-        }}
-      >
+      <Paper visibleFrom="md" w={sidebarOpened ? 300 : 0} bg="#121212"
+        style={{ borderRight: sidebarOpened ? "1px solid #2a2a2a" : "none", display: "flex", flexDirection: "column", overflow: "hidden", transition: "width 0.3s ease, border-color 0.3s ease" }}>
         <Box style={{ opacity: sidebarOpened ? 1 : 0, transition: "opacity 0.2s ease", flex: 1, minWidth: 300 }}>
           {lobbySidebarContent}
         </Box>
       </Paper>
-
-      {/* Sidebar mobile drawer */}
-      <Drawer
-        hiddenFrom="md"
-        opened={sidebarOpened || false}
-        onClose={closeSidebar}
-        size="100%"
-        position="left"
-        styles={{
-          content: { backgroundColor: "#121212" },
-          header: { backgroundColor: "#121212" },
-          title: { color: "white" },
-        }}
-      >
+      <Drawer hiddenFrom="md" opened={sidebarOpened || false} onClose={closeSidebar} size="100%" position="left"
+        styles={{ content: { backgroundColor: "#121212" }, header: { backgroundColor: "#121212" }, title: { color: "white" } }}>
         {lobbySidebarContent}
       </Drawer>
 
-      {/* CONTEÚDO PRINCIPAL */}
       <Box style={{ flex: 1, overflow: "auto" }} p="md">
         <Stack gap="md" style={{ maxWidth: 1100, margin: "0 auto" }}>
-          {/* Toggle sidebar button */}
           <Group gap="xs">
-            <ActionIcon variant="subtle" color="gray" hiddenFrom="md" onClick={toggleSidebar} aria-label="Abrir sidebar">
-              <IconLayoutSidebar size={20} />
-            </ActionIcon>
+            <ActionIcon variant="subtle" color="gray" hiddenFrom="md" onClick={toggleSidebar} aria-label="Abrir sidebar"><IconLayoutSidebar size={20} /></ActionIcon>
             <ActionIcon variant="subtle" color="gray" visibleFrom="md" onClick={toggleSidebar} aria-label={sidebarOpened ? "Fechar sidebar" : "Abrir sidebar"}>
               {sidebarOpened ? <IconChevronLeft size={18} /> : <IconChevronRight size={18} />}
             </ActionIcon>
           </Group>
 
-          {/* Pool */}
           <Group justify="space-between">
             <Text fw={600} c="white">Pool ({poolCount}/{MAX_POOL})</Text>
             <Group gap={4}>
@@ -543,141 +745,39 @@ export default function SalaPage() {
             </Group>
           </Group>
 
-          <Box
-            style={{
-              overflowX: "auto",
-              scrollbarWidth: "thin",
-              scrollbarColor: "#2a2a2a transparent",
-            }}
-          >
+          <Box style={{ overflowX: "auto", scrollbarWidth: "thin", scrollbarColor: "#2a2a2a transparent" }}>
             <Group gap="sm" wrap="nowrap" style={{ minHeight: 170, paddingBottom: 4 }}>
               {room.pool.length === 0 ? (
-                <div
-                  style={{
-                    minWidth: "100%",
-                    minHeight: 160,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: 12,
-                    border: "1px dashed rgba(255,255,255,0.15)",
-                    background: "rgba(255,255,255,0.02)",
-                  }}
-                >
-                  <Text c="rgba(255,255,255,0.35)" size="sm">
-                    Nenhum anime ainda. Busque abaixo e clique para adicionar!
-                  </Text>
+                <div style={{ minWidth: "100%", minHeight: 160, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 12, border: "1px dashed rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.02)" }}>
+                  <Text c="rgba(255,255,255,0.35)" size="sm">Nenhum anime ainda. Busque abaixo e clique para adicionar!</Text>
                 </div>
               ) : room.pool.map((a, idx) => (
-                <div
-                  key={a.id}
-                  className="group relative overflow-hidden rounded-xl flex-shrink-0 transition-all duration-300 hover:scale-105"
-                  style={{
-                    width: 120,
-                    aspectRatio: "2/3",
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-                  }}
-                >
-                  {/* Cover background */}
-                  <div
-                    className="absolute inset-0 bg-cover bg-center"
-                    style={{ backgroundImage: `url(${a.coverImage})` }}
-                  />
-
-                  {/* Gradient overlay */}
-                  <div
-                    className="absolute inset-0"
-                    style={{ background: "linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.85))" }}
-                  />
-
-                  {/* Index badge */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 6,
-                      left: 6,
-                      width: 22,
-                      height: 22,
-                      borderRadius: "50%",
-                      background: "rgba(139, 92, 246, 0.8)",
-                      backdropFilter: "blur(4px)",
-                      WebkitBackdropFilter: "blur(4px)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                    }}
-                  >
+                <div key={a.id} className="group relative overflow-hidden rounded-xl flex-shrink-0 transition-all duration-300 hover:scale-105"
+                  style={{ width: 120, aspectRatio: "2/3", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 4px 12px rgba(0,0,0,0.3)" }}>
+                  <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${a.coverImage})` }} />
+                  <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.85))" }} />
+                  <div style={{ position: "absolute", top: 6, left: 6, width: 22, height: 22, borderRadius: "50%", background: "rgba(139, 92, 246, 0.8)", backdropFilter: "blur(4px)", border: "1px solid rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <Text size="xs" fw={700} c="white" style={{ fontSize: 11 }}>{idx + 1}</Text>
                   </div>
-
-                  {/* Remove button */}
-                  <ActionIcon
-                    variant="filled"
-                    color="red"
-                    size="xs"
-                    radius="xl"
+                  <ActionIcon variant="filled" color="red" size="xs" radius="xl"
                     className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-                    style={{
-                      position: "absolute",
-                      top: 6,
-                      right: 6,
-                      background: "rgba(0,0,0,0.5)",
-                      backdropFilter: "blur(4px)",
-                      WebkitBackdropFilter: "blur(4px)",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                    }}
-                    onClick={() => handleRemoveAnime(a.id)}
-                    aria-label={`Remover ${a.title}`}
-                  >
+                    style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", border: "1px solid rgba(255,255,255,0.1)" }}
+                    onClick={() => handleRemoveAnime(a.id)} aria-label={`Remover ${a.title}`}>
                     <IconX size={12} />
                   </ActionIcon>
-
-                  {/* Info overlay at bottom */}
-                  <div
-                    className="absolute bottom-0 left-0 right-0"
-                    style={{
-                      padding: "6px 8px",
-                      background: "rgba(0,0,0,0.4)",
-                      backdropFilter: "blur(8px)",
-                      WebkitBackdropFilter: "blur(8px)",
-                      borderTop: "1px solid rgba(255,255,255,0.08)",
-                    }}
-                  >
-                    <Text
-                      size="xs"
-                      fw={600}
-                      c="white"
-                      truncate
-                      style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)", fontSize: 11 }}
-                    >
-                      {a.title}
-                    </Text>
-                    <Text
-                      size="xs"
-                      c="rgba(255,255,255,0.5)"
-                      truncate
-                      style={{ fontSize: 10, marginTop: 1 }}
-                    >
-                      +{a.addedByName}
-                    </Text>
+                  <div className="absolute bottom-0 left-0 right-0" style={{ padding: "6px 8px", background: "rgba(0,0,0,0.4)", backdropFilter: "blur(8px)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                    <Text size="xs" fw={600} c="white" truncate style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)", fontSize: 11 }}>{a.title}</Text>
+                    <Text size="xs" c="rgba(255,255,255,0.5)" truncate style={{ fontSize: 10, marginTop: 1 }}>+{a.addedByName}</Text>
                   </div>
                 </div>
               ))}
             </Group>
           </Box>
 
-          {/* Busca estilo solo */}
-          <TextInput
-            placeholder="Buscar anime por nome..."
-            leftSection={<IconSearch size={20} />}
-            value={query}
-            onChange={(e) => handleSearch(e.currentTarget.value)}
+          <TextInput placeholder="Buscar anime por nome..." leftSection={<IconSearch size={20} />}
+            value={query} onChange={(e) => handleSearch(e.currentTarget.value)}
             size="lg" radius="md"
-            styles={{ input: { backgroundColor: "#141414", border: "1px solid #2a2a2a", color: "white" } }}
-          />
-
+            styles={{ input: { backgroundColor: "#141414", border: "1px solid #2a2a2a", color: "white" } }} />
           <GenreTags selected={selectedGenres} onSelect={handleGenresChange} />
 
           {searchLoading && <Center py="xl"><Loader color="grape" /></Center>}
@@ -694,15 +794,9 @@ export default function SalaPage() {
                   const canAdd = !inPool && poolCount < MAX_POOL
                   return (
                     <Card key={anime.id} p={4} radius="md" bg="#1a1a1a"
-                      style={{
-                        cursor: canAdd ? "pointer" : "default",
-                        border: inPool ? "2px solid #8b5cf6" : "2px solid transparent",
-                        opacity: inPool ? 0.6 : 1,
-                        transition: "transform 0.2s",
-                      }}
+                      style={{ cursor: canAdd ? "pointer" : "default", border: inPool ? "2px solid #8b5cf6" : "2px solid transparent", opacity: inPool ? 0.6 : 1, transition: "transform 0.2s" }}
                       className={canAdd ? "hover:scale-105" : ""}
-                      onClick={() => canAdd && handleAddAnime(anime)}
-                    >
+                      onClick={() => canAdd && handleAddAnime(anime)}>
                       <Card.Section>
                         <Image src={anime.coverImage} alt={anime.title} w="100%" h={180} fit="cover"
                           fallbackSrc="https://via.placeholder.com/160x180?text=No+Image" />
@@ -716,30 +810,18 @@ export default function SalaPage() {
 
               {pageInfo && pageInfo.lastPage > 1 && (
                 <Group justify="center" mt="md">
-                  <Button variant="outline" color="gray" size="sm"
-                    disabled={page <= 1}
-                    onClick={() => goToPage(page - 1)}
-                    leftSection={<IconChevronLeft size={16} />}>
-                    Anterior
-                  </Button>
-                  <Text size="sm" c="dimmed" px="md">
-                    Página {pageInfo.currentPage} de {pageInfo.lastPage} — {pageInfo.total} resultados
-                  </Text>
-                  <Button variant="outline" color="gray" size="sm"
-                    disabled={page >= pageInfo.lastPage}
-                    onClick={() => goToPage(page + 1)}
-                    rightSection={<IconChevronRight size={16} />}>
-                    Próxima
-                  </Button>
+                  <Button variant="outline" color="gray" size="sm" disabled={page <= 1}
+                    onClick={() => goToPage(page - 1)} leftSection={<IconChevronLeft size={16} />}>Anterior</Button>
+                  <Text size="sm" c="dimmed" px="md">Página {pageInfo.currentPage} de {pageInfo.lastPage} — {pageInfo.total} resultados</Text>
+                  <Button variant="outline" color="gray" size="sm" disabled={page >= pageInfo.lastPage}
+                    onClick={() => goToPage(page + 1)} rightSection={<IconChevronRight size={16} />}>Próxima</Button>
                 </Group>
               )}
             </>
           )}
 
-          {/* Botão iniciar */}
           {isHost ? (
-            <Button size="lg" radius="md" fullWidth
-              disabled={!poolOk || room.players.length < 2}
+            <Button size="lg" radius="md" fullWidth disabled={!poolOk || room.players.length < 2}
               onClick={handleStart}
               styles={{ root: { background: poolOk && room.players.length >= 2 ? "linear-gradient(135deg, #8b5cf6, #ec4899)" : undefined } }}>
               {room.players.length < 2 ? "Aguardando jogadores..."

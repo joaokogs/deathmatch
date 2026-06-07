@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { startGame } from "@/src/lib/room"
+import { placeAnimeInTier } from "@/src/lib/room"
+import type { TierLabel } from "@/src/lib/types"
 
 export async function POST(
   req: NextRequest,
@@ -7,16 +8,20 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const { playerId, animeCount } = await req.json()
+    const { playerId, animeId, tier } = await req.json() as {
+      playerId: string
+      animeId: number
+      tier: TierLabel
+    }
 
-    if (!playerId) {
+    if (!playerId || !animeId || !tier) {
       return NextResponse.json(
-        { error: "playerId é obrigatório" },
+        { error: "Campos obrigatórios: playerId, animeId, tier" },
         { status: 400 }
       )
     }
 
-    const result = await startGame(id, playerId, animeCount)
+    const result = await placeAnimeInTier(id, playerId, animeId, tier)
 
     if (result.error) {
       return NextResponse.json({ error: result.error }, { status: 400 })
@@ -26,7 +31,7 @@ export async function POST(
   } catch (err) {
     console.error(err)
     return NextResponse.json(
-      { error: "Erro ao iniciar jogo" },
+      { error: "Erro ao classificar anime" },
       { status: 500 }
     )
   }
